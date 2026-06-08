@@ -27,5 +27,17 @@ T_p1 = L_d / v_max
 If the derived second preview time is not positive or the gain equations are
 singular, that DPP design point is omitted from the experiment results.
 
+For ECPP, the state-dependent gate follows the relative linearization error
+rates used in the paper:
+
+```text
+epsilon_y = (e_y / L_d)^2
+epsilon_psi = |e_psi - sin(e_psi)| / |sin(e_psi)|
+```
+
+Both components use the same on/off error-rate thresholds, `error_on = 0.10`
+and `error_off = 0.50` by default. The final gate is
+`sigma = sigma_y(epsilon_y) * sigma_psi(epsilon_psi)`.
+
 The package does not implement velocity scheduling, acceleration-window search,
 or non-differential platform control.

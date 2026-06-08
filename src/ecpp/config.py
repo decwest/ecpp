@@ -24,17 +24,11 @@ class EcppConfig:
     zero_crossing_deadband: float = 0.01
     ecpp_omega_n: float = 1.0
     ecpp_zeta: float = 1.0
-    ecpp_v_min: float = 0.05
     ecpp_v_epsilon: float = 0.05
-    ecpp_gain_speed_regularization: str = "floor"
-    ecpp_lateral_gate_on_ratio: float = 0.316
-    ecpp_lateral_gate_off_ratio: float = 0.707
-    ecpp_heading_gate_on: float = 0.749
-    ecpp_heading_gate_off: float = 1.496
+    ecpp_gate_error_on: float = 0.10
+    ecpp_gate_error_off: float = 0.50
     ecpp_gate_sigmoid_endpoint_value: float = 0.01
     ecpp_gate_mode: str = "sigmoid"
-    ecpp_lateral_saturation_ratio: float = 0.0
-    ecpp_blend: float = 1.0
     dpp_omega_n: float = 1.0
     dpp_zeta: float = 1.0
     dpp_preview_time: float = 0.5
@@ -56,16 +50,16 @@ class EcppConfig:
             raise ValueError("zeta values must be > 0")
         if self.dpp_preview_time <= 0.0:
             raise ValueError("dpp_preview_time must be > 0")
-        if self.ecpp_lateral_gate_off_ratio <= self.ecpp_lateral_gate_on_ratio:
-            raise ValueError("lateral gate off ratio must be greater than on ratio")
-        if self.ecpp_heading_gate_off <= self.ecpp_heading_gate_on:
-            raise ValueError("heading gate off must be greater than heading gate on")
+        if self.ecpp_v_epsilon <= 0.0:
+            raise ValueError("ecpp_v_epsilon must be > 0")
+        if self.ecpp_gate_error_on < 0.0:
+            raise ValueError("gate error on threshold must be non-negative")
+        if self.ecpp_gate_error_off <= self.ecpp_gate_error_on:
+            raise ValueError("gate error off threshold must be greater than on threshold")
         if not 0.0 < self.ecpp_gate_sigmoid_endpoint_value < 0.5:
             raise ValueError("sigmoid endpoint value must be in (0, 0.5)")
-        if self.ecpp_gate_mode not in {"sigmoid", "smoothstep", "always_on", "off"}:
-            raise ValueError("ecpp_gate_mode must be sigmoid, smoothstep, always_on, or off")
-        if self.ecpp_gain_speed_regularization not in {"floor", "epsilon"}:
-            raise ValueError("ecpp_gain_speed_regularization must be floor or epsilon")
+        if self.ecpp_gate_mode not in {"sigmoid", "always_on", "off"}:
+            raise ValueError("ecpp_gate_mode must be sigmoid, always_on, or off")
 
 
 @dataclass(frozen=True)
@@ -118,10 +112,8 @@ def experiment_config_from_mapping(data: Mapping[str, Any], base_dir: Path | Non
         goal_tolerance_heading=math.radians(_float(control_data, "goal_tolerance_heading_deg", math.degrees(control.goal_tolerance_heading))),
         ecpp_gate_mode=str(gate_data.get("mode", control.ecpp_gate_mode)),
         ecpp_gate_sigmoid_endpoint_value=_float(gate_data, "sigmoid_endpoint_value", control.ecpp_gate_sigmoid_endpoint_value),
-        ecpp_lateral_gate_on_ratio=_float(gate_data, "lateral_on_ratio", control.ecpp_lateral_gate_on_ratio),
-        ecpp_lateral_gate_off_ratio=_float(gate_data, "lateral_off_ratio", control.ecpp_lateral_gate_off_ratio),
-        ecpp_heading_gate_on=_float(gate_data, "heading_on", control.ecpp_heading_gate_on),
-        ecpp_heading_gate_off=_float(gate_data, "heading_off", control.ecpp_heading_gate_off),
+        ecpp_gate_error_on=_float(gate_data, "error_on", control.ecpp_gate_error_on),
+        ecpp_gate_error_off=_float(gate_data, "error_off", control.ecpp_gate_error_off),
     )
 
     lookahead = _mapping(data.get("lookahead"))

@@ -23,10 +23,8 @@ gain_sweep:
 gate:
   mode: sigmoid
   sigmoid_endpoint_value: 0.01
-  lateral_on_ratio: 0.316
-  lateral_off_ratio: 0.707
-  heading_on: 0.749
-  heading_off: 1.496
+  error_on: 0.10
+  error_off: 0.50
 
 paths:
   - key: straight

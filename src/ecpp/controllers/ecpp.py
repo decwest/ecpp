@@ -63,10 +63,7 @@ def calc_ecpp_terms(
     omega_n = float(config.ecpp_omega_n)
     zeta = float(config.ecpp_zeta)
     current_speed = abs(float(current_velocity[0]))
-    if config.ecpp_gain_speed_regularization == "epsilon":
-        v_gain = current_speed + max(float(config.ecpp_v_epsilon), eps)
-    else:
-        v_gain = max(current_speed, float(config.ecpp_v_min), eps)
+    v_gain = current_speed + max(float(config.ecpp_v_epsilon), eps)
 
     k_y = (omega_n / v_gain) ** 2
     k_psi = 2.0 * zeta * omega_n / v_gain
@@ -76,17 +73,24 @@ def calc_ecpp_terms(
     dK_psi = k_psi - k_psi_pp
 
     gate_mode = config.ecpp_gate_mode
+    sin_e_psi = math.sin(e_psi)
+    epsilon_y = (e_y / L_d) ** 2
+    if abs(e_psi) <= eps:
+        epsilon_psi = 0.0
+    else:
+        epsilon_psi = abs(e_psi - sin_e_psi) / max(abs(sin_e_psi), eps)
+
     sigma_y = gate_abs_by_mode(
-        abs(e_y),
-        config.ecpp_lateral_gate_on_ratio * L_d,
-        config.ecpp_lateral_gate_off_ratio * L_d,
+        epsilon_y,
+        config.ecpp_gate_error_on,
+        config.ecpp_gate_error_off,
         config.ecpp_gate_sigmoid_endpoint_value,
         gate_mode,
     )
     sigma_psi = gate_abs_by_mode(
-        abs(float(normalize_angle(e_psi))),
-        config.ecpp_heading_gate_on,
-        config.ecpp_heading_gate_off,
+        epsilon_psi,
+        config.ecpp_gate_error_on,
+        config.ecpp_gate_error_off,
         config.ecpp_gate_sigmoid_endpoint_value,
         gate_mode,
     )
@@ -97,11 +101,10 @@ def calc_ecpp_terms(
     else:
         sigma = sigma_y * sigma_psi
 
-    sin_e_psi = math.sin(e_psi)
-    lateral_raw = dK_y * _saturate_lateral_error(e_y, config.ecpp_lateral_saturation_ratio * L_d)
+    lateral_raw = dK_y * e_y
     heading_raw = dK_psi * sin_e_psi
     compensation_raw = lateral_raw + heading_raw
-    compensation = -config.ecpp_blend * sigma * compensation_raw
+    compensation = -sigma * compensation_raw
     curvature = kappa_pp + compensation
     return EcppTerms(
         curvature=float(curvature),
@@ -126,9 +129,3 @@ def calc_ecpp_terms(
         lookahead_distance=float(L_d),
         v_gain=float(v_gain),
     )
-
-
-def _saturate_lateral_error(e_y: float, scale: float) -> float:
-    if scale <= 0.0:
-        return e_y
-    return scale * math.tanh(e_y / scale)
