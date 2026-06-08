@@ -44,7 +44,6 @@ def count_zero_crossings(values: np.ndarray, deadband: float = 1e-3) -> int:
 def summarize_result(result: TrackingResult, config: EcppConfig) -> dict[str, object]:
     ey = calc_signed_lateral_errors(result.poses, result.scenario.path)
     epsi = calc_signed_heading_errors(result.poses, result.scenario.path)
-    norm = error_norm(ey, epsi, config.error_norm_heading_scale)
     omega_expected = np.clip(result.curvatures * config.v_max, -config.omega_max, config.omega_max)
     return {
         "path_name": result.scenario.key,
@@ -65,7 +64,8 @@ def summarize_result(result: TrackingResult, config: EcppConfig) -> dict[str, ob
         "goal_reached": result.goal_reached,
         "max_steps_reached": result.max_steps_reached,
         "travel_time_s": result.times[-1],
-        "T10_s": first_threshold_time(norm, result.times, 0.1),
+        "T10_y_s": first_threshold_time(np.abs(ey), result.times, 0.1),
+        "T10_psi_s": first_threshold_time(np.abs(epsi), result.times, 0.1),
         "settling_time_s": settling_time(ey, epsi, result.times, config),
         "signed_lateral_zero_crossings": count_zero_crossings(ey, config.zero_crossing_deadband),
         "mean_abs_e_y_m": float(np.mean(np.abs(ey))),
@@ -83,10 +83,6 @@ def summarize_result(result: TrackingResult, config: EcppConfig) -> dict[str, ob
         "max_v_cmd_error": float(np.max(np.abs(result.v_cmd - config.v_max))) if len(result.v_cmd) else float("nan"),
         "max_omega_relation_error": float(np.max(np.abs(result.omega_cmd - omega_expected))) if len(result.omega_cmd) else float("nan"),
     }
-
-
-def error_norm(ey: np.ndarray, epsi: np.ndarray, heading_scale: float) -> np.ndarray:
-    return np.sqrt(ey * ey + (heading_scale * epsi) ** 2)
 
 
 def first_threshold_time(values: np.ndarray, times: np.ndarray, ratio: float) -> float:

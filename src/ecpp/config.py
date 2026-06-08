@@ -20,7 +20,6 @@ class EcppConfig:
     settling_e_y: float = 0.02
     settling_e_psi: float = math.radians(5.0)
     settling_hold_time: float = 0.5
-    error_norm_heading_scale: float = 0.50
     zero_crossing_deadband: float = 0.01
     ecpp_omega_n: float = 1.0
     ecpp_zeta: float = 1.0

@@ -121,9 +121,9 @@ def common_conditions_table(experiment: ExperimentConfig) -> str:
 def test1_results_table(experiment: ExperimentConfig, rows: list[dict[str, object]]) -> str:
     selected = select_representative_rows(experiment, rows)
     lines = [
-        r"\begin{tabular}{llllllllllll}",
+        r"\begin{tabular}{lllllllllllll}",
         r"\toprule",
-        r"Path & Method & $L_d$ & $\rho$ & $\zeta$ & $T_{10}$ & $N_{\rm zc}$ & $\overline{|e_y|}$ & $\overline{|e_\psi|}$ & $T_s$ & Arr. & $r_{\rm clip}$ \\",
+        r"Path & Method & $L_d$ & $\rho$ & $\zeta$ & $T_{10,y}$ & $T_{10,\psi}$ & $N_{\rm zc}$ & $\overline{|e_y|}$ & $\overline{|e_\psi|}$ & $T_s$ & Arr. & $r_{\rm clip}$ \\",
         r"\midrule",
     ]
     for row in selected:
@@ -133,7 +133,8 @@ def test1_results_table(experiment: ExperimentConfig, rows: list[dict[str, objec
             f"{float(row['lookahead_m']):.2f}",
             fmt_optional(row["rho"], 1),
             fmt_optional(row["zeta"], 3).rstrip("0").rstrip("."),
-            fmt_float(row["T10_s"], 2),
+            fmt_float(row["T10_y_s"], 2),
+            fmt_float(row["T10_psi_s"], 2),
             str(int(row["signed_lateral_zero_crossings"])),
             fmt_float(row["mean_abs_e_y_m"], 3),
             fmt_float(row["mean_abs_heading_error_deg"], 2),
