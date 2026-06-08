@@ -160,7 +160,7 @@ def config_for_variant(
     zeta: float,
     gate_mode: str,
 ) -> EcppConfig:
-    preview_time = min(lookahead_m / config.v_max, 0.5 / omega_n)
+    preview_time = lookahead_m / config.v_max
     return replace(
         config,
         lookahead_m=lookahead_m,

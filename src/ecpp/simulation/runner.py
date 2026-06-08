@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+import warnings
 
 from ..config import ExperimentConfig, config_for_variant
 from ..geometry import pose_from_path_error
@@ -29,7 +30,12 @@ def run_access_experiment(experiment: ExperimentConfig) -> AccessExperimentOutpu
                 gate_mode=variant.gate_mode if variant.method == "ecpp" else "off",
             )
             key = result_key("test1", scenario.key, condition.key, variant)
-            results[key] = run_fixed_speed(scenario, condition, variant, config)
+            try:
+                results[key] = run_fixed_speed(scenario, condition, variant, config)
+            except ValueError as exc:
+                if variant.method != "dpp":
+                    raise
+                warnings.warn(f"skip invalid DPP variant {variant.key}: {exc}", RuntimeWarning, stacklevel=2)
     return AccessExperimentOutput(results=results)
 
 
