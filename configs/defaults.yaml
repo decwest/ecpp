@@ -1,0 +1,49 @@
+control:
+  v_max: 0.50
+  omega_max: 1.00
+  dt: 0.020
+  goal_tolerance_dist: 0.06
+  goal_tolerance_heading_deg: 8.0
+
+lookahead:
+  short_m: 0.50
+  long_m: 1.20
+
+initial_condition:
+  e_y_m: 0.10
+  e_psi_deg: 15.0
+
+gain_sweep:
+  rho: [1.0, 1.5, 2.0]
+  zeta: [0.70710678, 1.0, 1.4]
+  representative:
+    rho: 1.5
+    zeta: 1.0
+
+gate:
+  mode: sigmoid
+  sigmoid_endpoint_value: 0.01
+  lateral_on_ratio: 0.316
+  lateral_off_ratio: 0.707
+  heading_on: 0.749
+  heading_off: 1.496
+
+paths:
+  - key: straight
+    label: Straight
+    type: straight
+    params:
+      length: 6.0
+      num_points: 700
+  - key: arc
+    label: Arc
+    type: arc
+    params:
+      radius: 1.5
+      angle_deg: 90.0
+      num_points: 600
+
+experiment:
+  max_steps: 1100
+  output_dir: results/access_ecpp_fixed_speed
+  export_tex_project_dir: ../tex_docker_environment/projects/fumiya_ieee_access
