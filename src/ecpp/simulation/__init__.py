@@ -1,20 +1,20 @@
-from .fixed_speed import (
-    FixedSpeedResult,
+from .path_tracking import (
+    TrackingResult,
     InitialCondition,
     MethodVariant,
     PathScenario,
-    run_fixed_speed,
+    run_path_tracking,
     step_unicycle,
 )
 from .runner import AccessExperimentOutput, run_access_experiment
 
 __all__ = [
     "AccessExperimentOutput",
-    "FixedSpeedResult",
+    "TrackingResult",
     "InitialCondition",
     "MethodVariant",
     "PathScenario",
     "run_access_experiment",
-    "run_fixed_speed",
+    "run_path_tracking",
     "step_unicycle",
 ]

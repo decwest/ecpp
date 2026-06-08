@@ -42,7 +42,7 @@ class MethodVariant:
 
 
 @dataclass(frozen=True)
-class FixedSpeedResult:
+class TrackingResult:
     scenario: PathScenario
     condition: InitialCondition
     variant: MethodVariant
@@ -60,12 +60,12 @@ class FixedSpeedResult:
     max_steps_reached: bool
 
 
-def run_fixed_speed(
+def run_path_tracking(
     scenario: PathScenario,
     condition: InitialCondition,
     variant: MethodVariant,
     config: EcppConfig,
-) -> FixedSpeedResult:
+) -> TrackingResult:
     path = scenario.path
     path_distances = calc_path_distances(path)
     goal_pose = path[-1, :3]
@@ -128,7 +128,7 @@ def run_fixed_speed(
     if not goal_reached:
         goal_reached = position_goal_reached(current_pose, goal_pose, config.goal_tolerance_dist)
 
-    return FixedSpeedResult(
+    return TrackingResult(
         scenario=scenario,
         condition=condition,
         variant=variant,

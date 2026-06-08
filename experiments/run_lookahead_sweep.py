@@ -15,7 +15,7 @@ from ecpp.config import config_for_variant, load_experiment_config
 from ecpp.evaluation.metrics import calc_signed_lateral_errors, summarize_result
 from ecpp.geometry import pose_from_path_error
 from ecpp.paths import build_path
-from ecpp.simulation.fixed_speed import InitialCondition, MethodVariant, PathScenario, run_fixed_speed
+from ecpp.simulation.path_tracking import InitialCondition, MethodVariant, PathScenario, run_path_tracking
 
 
 def parse_args() -> argparse.Namespace:
@@ -54,7 +54,7 @@ def main() -> None:
             zeta=experiment.representative_zeta,
             gate_mode="off",
         )
-        result = run_fixed_speed(scenario, condition, variant, config)
+        result = run_path_tracking(scenario, condition, variant, config)
         results[lookahead] = result
         rows.append({"lookahead_m": lookahead, **summarize_result(result, experiment.control)})
 

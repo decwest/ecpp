@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 
 from ..config import EcppConfig, ExperimentConfig
-from ..simulation.fixed_speed import FixedSpeedResult
+from ..simulation.path_tracking import TrackingResult
 from .metrics import calc_signed_heading_errors, calc_signed_lateral_errors, summarize_result
 
 
@@ -34,7 +34,7 @@ def write_command_check_csv(path: Path, rows: list[dict[str, object]]) -> None:
         })
 
 
-def write_timeseries(series_dir: Path, results: dict[str, FixedSpeedResult]) -> None:
+def write_timeseries(series_dir: Path, results: dict[str, TrackingResult]) -> None:
     series_dir.mkdir(parents=True, exist_ok=True)
     fields = [
         "time_s",
@@ -71,7 +71,7 @@ def write_timeseries(series_dir: Path, results: dict[str, FixedSpeedResult]) -> 
                 })
 
 
-def write_npz(path: Path, results: dict[str, FixedSpeedResult]) -> None:
+def write_npz(path: Path, results: dict[str, TrackingResult]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     arrays: dict[str, np.ndarray] = {}
     for key, result in results.items():
@@ -91,7 +91,7 @@ def write_latex_tables(tables_dir: Path, experiment: ExperimentConfig, rows: lis
     (tables_dir / "fixed_speed_test1_results.tex").write_text(test1_results_table(experiment, rows), encoding="utf-8")
 
 
-def rows_from_results(results: dict[str, FixedSpeedResult], config: EcppConfig) -> list[dict[str, object]]:
+def rows_from_results(results: dict[str, TrackingResult], config: EcppConfig) -> list[dict[str, object]]:
     rows = []
     for key, result in results.items():
         row = {"result_key": key, **summarize_result(result, config)}

@@ -11,11 +11,11 @@ import numpy as np
 from matplotlib.animation import FFMpegWriter, FuncAnimation, PillowWriter
 from matplotlib.patches import FancyArrowPatch
 
-from ..simulation.fixed_speed import FixedSpeedResult
+from ..simulation.path_tracking import TrackingResult
 
 
 def animate_result(
-    result: FixedSpeedResult,
+    result: TrackingResult,
     output_path: Path,
     fps: int = 20,
     frame_stride: int = 5,
@@ -83,7 +83,7 @@ def sample_frame_indices(num_poses: int, frame_stride: int, max_frames: int) -> 
     return indices
 
 
-def set_equal_limits(ax: plt.Axes, result: FixedSpeedResult) -> None:
+def set_equal_limits(ax: plt.Axes, result: TrackingResult) -> None:
     xy = np.vstack([result.scenario.path[:, :2], result.poses[:, :2]])
     x_min, y_min = np.min(xy, axis=0)
     x_max, y_max = np.max(xy, axis=0)

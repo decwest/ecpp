@@ -6,7 +6,7 @@ import numpy as np
 
 from ..config import EcppConfig
 from ..geometry import calc_path_headings, normalize_angle
-from ..simulation.fixed_speed import FixedSpeedResult
+from ..simulation.path_tracking import TrackingResult
 
 
 def nearest_path_indices(robot_poses: np.ndarray, path: np.ndarray) -> np.ndarray:
@@ -41,7 +41,7 @@ def count_zero_crossings(values: np.ndarray, deadband: float = 1e-3) -> int:
     return int(np.sum(nonzero[1:] * nonzero[:-1] < 0.0))
 
 
-def summarize_result(result: FixedSpeedResult, config: EcppConfig) -> dict[str, object]:
+def summarize_result(result: TrackingResult, config: EcppConfig) -> dict[str, object]:
     ey = calc_signed_lateral_errors(result.poses, result.scenario.path)
     epsi = calc_signed_heading_errors(result.poses, result.scenario.path)
     norm = error_norm(ey, epsi, config.error_norm_heading_scale)

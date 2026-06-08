@@ -12,7 +12,7 @@ import numpy as np
 
 from ..config import ExperimentConfig
 from ..evaluation.metrics import calc_signed_heading_errors, calc_signed_lateral_errors
-from ..simulation.fixed_speed import FixedSpeedResult
+from ..simulation.path_tracking import TrackingResult
 
 
 METHOD_ORDER = {"PP": 0, "DPP": 1, "ECPP without gate": 2, "ECPP": 3}
@@ -24,7 +24,7 @@ METHOD_STYLE = {
 }
 
 
-def plot_trajectory_sweep(output_stem: Path, experiment: ExperimentConfig, results: dict[str, FixedSpeedResult]) -> None:
+def plot_trajectory_sweep(output_stem: Path, experiment: ExperimentConfig, results: dict[str, TrackingResult]) -> None:
     scenarios = ordered_scenarios(results)
     fig, axes = plt.subplots(len(scenarios), 2, figsize=(7.2, 2.9 * len(scenarios)), squeeze=False)
     for row, scenario in enumerate(scenarios):
@@ -58,7 +58,7 @@ def plot_trajectory_sweep(output_stem: Path, experiment: ExperimentConfig, resul
     save_figure(fig, output_stem)
 
 
-def plot_curvature_sweep(output_stem: Path, experiment: ExperimentConfig, results: dict[str, FixedSpeedResult]) -> None:
+def plot_curvature_sweep(output_stem: Path, experiment: ExperimentConfig, results: dict[str, TrackingResult]) -> None:
     scenarios = ordered_scenarios(results)
     fig, axes = plt.subplots(len(scenarios), 2, figsize=(7.2, 2.8 * len(scenarios)), squeeze=False, sharey=True)
     for row, scenario in enumerate(scenarios):
@@ -91,7 +91,7 @@ def plot_curvature_sweep(output_stem: Path, experiment: ExperimentConfig, result
     save_figure(fig, output_stem)
 
 
-def plot_omega_profiles(output_stem: Path, experiment: ExperimentConfig, results: dict[str, FixedSpeedResult]) -> None:
+def plot_omega_profiles(output_stem: Path, experiment: ExperimentConfig, results: dict[str, TrackingResult]) -> None:
     selected = representative_results(experiment, results)
     fig, ax = plt.subplots(figsize=(7.0, 3.2))
     for label, result in selected:
@@ -106,7 +106,7 @@ def plot_omega_profiles(output_stem: Path, experiment: ExperimentConfig, results
     save_figure(fig, output_stem)
 
 
-def plot_error_profiles(output_stem: Path, experiment: ExperimentConfig, results: dict[str, FixedSpeedResult]) -> None:
+def plot_error_profiles(output_stem: Path, experiment: ExperimentConfig, results: dict[str, TrackingResult]) -> None:
     selected = representative_results(experiment, results)
     fig, axes = plt.subplots(2, 1, figsize=(7.0, 4.8), sharex=True)
     for label, result in selected:
@@ -124,7 +124,7 @@ def plot_error_profiles(output_stem: Path, experiment: ExperimentConfig, results
     save_figure(fig, output_stem)
 
 
-def plot_gate_profiles(output_stem: Path, experiment: ExperimentConfig, results: dict[str, FixedSpeedResult]) -> None:
+def plot_gate_profiles(output_stem: Path, experiment: ExperimentConfig, results: dict[str, TrackingResult]) -> None:
     selected = [(label, result) for label, result in representative_results(experiment, results) if result.variant.label == "ECPP"]
     fig, ax = plt.subplots(figsize=(7.0, 3.2))
     for label, result in selected:
@@ -138,7 +138,7 @@ def plot_gate_profiles(output_stem: Path, experiment: ExperimentConfig, results:
     save_figure(fig, output_stem)
 
 
-def representative_results(experiment: ExperimentConfig, results: dict[str, FixedSpeedResult]) -> list[tuple[str, FixedSpeedResult]]:
+def representative_results(experiment: ExperimentConfig, results: dict[str, TrackingResult]) -> list[tuple[str, TrackingResult]]:
     out = []
     for result in results.values():
         if result.scenario.key != "straight":
@@ -150,7 +150,7 @@ def representative_results(experiment: ExperimentConfig, results: dict[str, Fixe
     return sorted(out, key=lambda item: (item[1].variant.lookahead_m, METHOD_ORDER.get(item[1].variant.label, 99)))
 
 
-def sorted_results(results: dict[str, FixedSpeedResult], scenario_key: str, lookahead: float) -> list[FixedSpeedResult]:
+def sorted_results(results: dict[str, TrackingResult], scenario_key: str, lookahead: float) -> list[TrackingResult]:
     selected = [
         result for result in results.values()
         if result.scenario.key == scenario_key and abs(result.variant.lookahead_m - lookahead) <= 1e-9
@@ -162,13 +162,13 @@ def sorted_results(results: dict[str, FixedSpeedResult], scenario_key: str, look
     ))
 
 
-def ordered_scenarios(results: dict[str, FixedSpeedResult]) -> list:
+def ordered_scenarios(results: dict[str, TrackingResult]) -> list:
     order = {"straight": 0, "arc": 1, "corner_90": 2}
     scenarios = {result.scenario.key: result.scenario for result in results.values()}
     return [item[1] for item in sorted(scenarios.items(), key=lambda kv: order.get(kv[0], 99))]
 
 
-def is_representative(experiment: ExperimentConfig, result: FixedSpeedResult) -> bool:
+def is_representative(experiment: ExperimentConfig, result: TrackingResult) -> bool:
     return (
         result.variant.rho is not None
         and result.variant.zeta is not None
@@ -177,7 +177,7 @@ def is_representative(experiment: ExperimentConfig, result: FixedSpeedResult) ->
     )
 
 
-def sweep_label(result: FixedSpeedResult, representative: bool) -> str:
+def sweep_label(result: TrackingResult, representative: bool) -> str:
     if result.variant.label == "PP":
         return "PP"
     return f"{result.variant.label} {'rep.' if representative else 'sweep'}"

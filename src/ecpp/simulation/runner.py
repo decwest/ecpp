@@ -7,16 +7,16 @@ import warnings
 from ..config import ExperimentConfig, config_for_variant
 from ..geometry import pose_from_path_error
 from ..paths import build_path
-from .fixed_speed import FixedSpeedResult, InitialCondition, MethodVariant, PathScenario, run_fixed_speed
+from .path_tracking import TrackingResult, InitialCondition, MethodVariant, PathScenario, run_path_tracking
 
 
 @dataclass(frozen=True)
 class AccessExperimentOutput:
-    results: dict[str, FixedSpeedResult]
+    results: dict[str, TrackingResult]
 
 
 def run_access_experiment(experiment: ExperimentConfig) -> AccessExperimentOutput:
-    results: dict[str, FixedSpeedResult] = {}
+    results: dict[str, TrackingResult] = {}
     for scenario in build_scenarios(experiment):
         condition = initial_condition(scenario, experiment.initial_e_y_m, experiment.initial_e_psi_deg)
         for variant in nominal_variants(experiment):
@@ -31,7 +31,7 @@ def run_access_experiment(experiment: ExperimentConfig) -> AccessExperimentOutpu
             )
             key = result_key("test1", scenario.key, condition.key, variant)
             try:
-                results[key] = run_fixed_speed(scenario, condition, variant, config)
+                results[key] = run_path_tracking(scenario, condition, variant, config)
             except ValueError as exc:
                 if variant.method != "dpp":
                     raise
