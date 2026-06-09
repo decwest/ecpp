@@ -24,7 +24,8 @@ def animate_result(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     frame_indices = sample_frame_indices(len(result.poses), frame_stride, max_frames)
     fig, ax = plt.subplots(figsize=(7.0, 5.0))
-    ax.plot(result.scenario.path[:, 0], result.scenario.path[:, 1], "k--", linewidth=1.2, label="Reference")
+    reference_path = result.scenario.evaluation_path
+    ax.plot(reference_path[:, 0], reference_path[:, 1], "k--", linewidth=1.2, label="Reference")
     trail, = ax.plot([], [], color="#2f855a", linewidth=1.6, label=result.variant.label)
     point, = ax.plot([], [], "o", color="#2b6cb0", markersize=6)
     lookahead, = ax.plot([], [], "o", color="#c05621", markersize=5, label="Lookahead")
@@ -35,7 +36,7 @@ def animate_result(
     ax.grid(True, linestyle=":", linewidth=0.6)
     ax.legend(fontsize=8)
     set_equal_limits(ax, result)
-    arrow_length = max(0.08, 0.04 * float(np.ptp(result.scenario.path[:, 0]) + np.ptp(result.scenario.path[:, 1])))
+    arrow_length = max(0.08, 0.04 * float(np.ptp(reference_path[:, 0]) + np.ptp(reference_path[:, 1])))
 
     def init() -> tuple[object, ...]:
         trail.set_data([], [])
@@ -84,7 +85,7 @@ def sample_frame_indices(num_poses: int, frame_stride: int, max_frames: int) -> 
 
 
 def set_equal_limits(ax: plt.Axes, result: TrackingResult) -> None:
-    xy = np.vstack([result.scenario.path[:, :2], result.poses[:, :2]])
+    xy = np.vstack([result.scenario.evaluation_path[:, :2], result.poses[:, :2]])
     x_min, y_min = np.min(xy, axis=0)
     x_max, y_max = np.max(xy, axis=0)
     span = max(float(x_max - x_min), float(y_max - y_min), 1e-3)

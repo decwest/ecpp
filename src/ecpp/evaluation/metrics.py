@@ -42,8 +42,8 @@ def count_zero_crossings(values: np.ndarray, deadband: float = 1e-3) -> int:
 
 
 def summarize_result(result: TrackingResult, config: EcppConfig) -> dict[str, object]:
-    ey = calc_signed_lateral_errors(result.poses, result.scenario.path)
-    epsi = calc_signed_heading_errors(result.poses, result.scenario.path)
+    ey = calc_signed_lateral_errors(result.poses, result.scenario.evaluation_path)
+    epsi = calc_signed_heading_errors(result.poses, result.scenario.evaluation_path)
     omega_expected = np.clip(result.curvatures * config.v_max, -config.omega_max, config.omega_max)
     return {
         "path_name": result.scenario.key,

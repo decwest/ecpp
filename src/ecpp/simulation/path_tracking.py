@@ -19,6 +19,15 @@ class PathScenario:
     label: str
     path: np.ndarray
     max_steps: int
+    reference_path: np.ndarray | None = None
+
+    @property
+    def evaluation_path(self) -> np.ndarray:
+        return self.path if self.reference_path is None else self.reference_path
+
+    @property
+    def goal_pose(self) -> np.ndarray:
+        return self.evaluation_path[-1, :3]
 
 
 @dataclass(frozen=True)
@@ -68,7 +77,7 @@ def run_path_tracking(
 ) -> TrackingResult:
     path = scenario.path
     path_distances = calc_path_distances(path)
-    goal_pose = path[-1, :3]
+    goal_pose = scenario.goal_pose
     current_pose = condition.pose.astype(float, copy=True)
     current_omega = 0.0
 

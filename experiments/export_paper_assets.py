@@ -18,11 +18,12 @@ def main() -> None:
     tables_dest = args.tex_project_dir / "generated" / "tables"
     figures_dest.mkdir(parents=True, exist_ok=True)
     tables_dest.mkdir(parents=True, exist_ok=True)
-    for src in (args.source_dir / "plots").glob("fixed_speed_*.*"):
+    for src in (args.source_dir / "plots").glob("*.*"):
         if src.suffix.lower() in {".pdf", ".png"}:
             shutil.copy2(src, figures_dest / src.name)
-    for src in (args.source_dir / "tables").glob("fixed_speed_*.tex"):
-        shutil.copy2(src, tables_dest / src.name)
+    for src in (args.source_dir / "tables").glob("fixed_speed_*.*"):
+        if src.suffix.lower() in {".tex", ".csv"}:
+            shutil.copy2(src, tables_dest / src.name)
     print(f"exported to: {args.tex_project_dir}")
 
 

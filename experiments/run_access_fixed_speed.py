@@ -57,11 +57,11 @@ def main() -> None:
     write_npz(output_dir / "fixed_speed_trajectories.npz", output.results)
     write_latex_tables(tables_dir, experiment, rows)
 
-    plot_trajectory_sweep(plots_dir / "fixed_speed_trajectory_sweep", experiment, output.results)
-    plot_curvature_sweep(plots_dir / "fixed_speed_curvature_sweep", experiment, output.results)
-    plot_omega_profiles(plots_dir / "fixed_speed_omega_profiles", experiment, output.results)
-    plot_error_profiles(plots_dir / "fixed_speed_error_profiles", experiment, output.results)
-    plot_gate_profiles(plots_dir / "fixed_speed_gate_profiles", experiment, output.results)
+    plot_trajectory_sweep(plots_dir / "trajectory_sweep", experiment, output.results)
+    plot_curvature_sweep(plots_dir / "curvature_sweep", experiment, output.results)
+    plot_omega_profiles(plots_dir / "omega_profiles", experiment, output.results)
+    plot_error_profiles(plots_dir / "error_profiles", experiment, output.results)
+    plot_gate_profiles(plots_dir / "gate_profiles", experiment, output.results)
 
     if args.save_animation:
         animations_dir.mkdir(parents=True, exist_ok=True)
@@ -89,11 +89,12 @@ def export_paper_assets(output_dir: Path, tex_project_dir: Path) -> None:
     tables_dest = tex_project_dir / "generated" / "tables"
     figures_dest.mkdir(parents=True, exist_ok=True)
     tables_dest.mkdir(parents=True, exist_ok=True)
-    for src in (output_dir / "plots").glob("fixed_speed_*.*"):
+    for src in (output_dir / "plots").glob("*.*"):
         if src.suffix.lower() in {".pdf", ".png"}:
             shutil.copy2(src, figures_dest / src.name)
-    for src in (output_dir / "tables").glob("fixed_speed_*.tex"):
-        shutil.copy2(src, tables_dest / src.name)
+    for src in (output_dir / "tables").glob("fixed_speed_*.*"):
+        if src.suffix.lower() in {".tex", ".csv"}:
+            shutil.copy2(src, tables_dest / src.name)
 
 
 if __name__ == "__main__":

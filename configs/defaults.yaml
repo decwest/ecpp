@@ -1,9 +1,9 @@
 control:
   v_max: 0.50
-  omega_max: 1.00
+  omega_max: 2.00
   dt: 0.020
-  goal_tolerance_dist: 0.06
-  goal_tolerance_heading_deg: 8.0
+  goal_tolerance_dist: 0.02
+  goal_tolerance_heading_deg: 2.0
 
 lookahead:
   short_m: 0.50
@@ -11,7 +11,7 @@ lookahead:
 
 initial_condition:
   e_y_m: 0.10
-  e_psi_deg: 15.0
+  e_psi_deg: -15.0
 
 gain_sweep:
   rho: [1.0, 1.5, 2.0]
@@ -31,13 +31,19 @@ paths:
     label: Straight
     type: straight
     params:
+      length: 8.0
+      num_points: 800
+    evaluation:
       length: 6.0
-      num_points: 700
+      num_points: 600
   - key: arc
     label: Arc
     type: arc
     params:
       radius: 1.5
+      angle_deg: 180.0
+      num_points: 1200
+    evaluation:
       angle_deg: 90.0
       num_points: 600
 

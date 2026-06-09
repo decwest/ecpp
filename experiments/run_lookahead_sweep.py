@@ -35,8 +35,9 @@ def main() -> None:
         shutil.rmtree(output_dir)
     plots_dir.mkdir(parents=True, exist_ok=True)
 
-    path = build_path("straight", {"length": 6.0, "num_points": 700})
-    scenario = PathScenario("straight", "Straight", path, experiment.max_steps)
+    path = build_path("straight", {"length": 8.0, "num_points": 800})
+    reference_path = build_path("straight", {"length": 6.0, "num_points": 600})
+    scenario = PathScenario("straight", "Straight", path, experiment.max_steps, reference_path=reference_path)
     condition = InitialCondition(
         "nominal",
         experiment.initial_e_y_m,
@@ -74,7 +75,7 @@ def write_rows(path: Path, rows: list[dict[str, object]]) -> None:
 
 def plot_trajectories(output_stem: Path, scenario: PathScenario, results: dict[float, object]) -> None:
     fig, ax = plt.subplots(figsize=(7.0, 4.0))
-    ax.plot(scenario.path[:, 0], scenario.path[:, 1], "k--", linewidth=1.2, label="Reference")
+    ax.plot(scenario.evaluation_path[:, 0], scenario.evaluation_path[:, 1], "k--", linewidth=1.2, label="Reference")
     for lookahead, result in results.items():
         ax.plot(result.poses[:, 0], result.poses[:, 1], linewidth=1.2, label=f"Ld={lookahead:.2f} m")
     ax.set_xlabel("x [m]")
@@ -88,7 +89,7 @@ def plot_trajectories(output_stem: Path, scenario: PathScenario, results: dict[f
 def plot_lateral_errors(output_stem: Path, scenario: PathScenario, results: dict[float, object]) -> None:
     fig, ax = plt.subplots(figsize=(7.0, 4.0))
     for lookahead, result in results.items():
-        ey = calc_signed_lateral_errors(result.poses, scenario.path)
+        ey = calc_signed_lateral_errors(result.poses, scenario.evaluation_path)
         ax.plot(result.times, ey, linewidth=1.2, label=f"Ld={lookahead:.2f} m")
     ax.set_xlabel("t [s]")
     ax.set_ylabel("e_y [m]")

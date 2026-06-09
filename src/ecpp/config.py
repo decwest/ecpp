@@ -15,10 +15,10 @@ class EcppConfig:
     v_max: float = 0.50
     omega_max: float = 1.00
     dt: float = 0.020
-    goal_tolerance_dist: float = 0.06
-    goal_tolerance_heading: float = math.radians(8.0)
+    goal_tolerance_dist: float = 0.02
+    goal_tolerance_heading: float = math.radians(2.0)
     settling_e_y: float = 0.02
-    settling_e_psi: float = math.radians(5.0)
+    settling_e_psi: float = math.radians(2.0)
     settling_hold_time: float = 0.5
     zero_crossing_deadband: float = 0.01
     ecpp_omega_n: float = 1.0
@@ -67,6 +67,8 @@ class PathSpec:
     label: str
     type: str
     params: dict[str, Any] = field(default_factory=dict)
+    evaluation_type: str | None = None
+    evaluation_params: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -74,11 +76,14 @@ class ExperimentConfig:
     control: EcppConfig = field(default_factory=EcppConfig)
     lookahead_short_m: float = 0.50
     lookahead_long_m: float = 1.20
+    lookahead_values_m: tuple[float, ...] = ()
     initial_e_y_m: float = 0.10
     initial_e_psi_deg: float = 15.0
     rho_values: tuple[float, ...] = (1.0, 1.5, 2.0)
+    omega_n_values: tuple[float, ...] = ()
     zeta_values: tuple[float, ...] = (1.0 / math.sqrt(2.0), 1.0, 1.4)
     representative_rho: float = 1.5
+    representative_omega_n: float | None = None
     representative_zeta: float = 1.0
     max_steps: int = 1100
     output_dir: Path = Path("results/access_ecpp_fixed_speed")
@@ -88,6 +93,31 @@ class ExperimentConfig:
         PathSpec("arc", "Arc", "arc", {"radius": 1.5, "angle_deg": 90.0, "num_points": 600}),
     )
     lookahead_sweep_values_m: tuple[float, ...] = (0.05, 0.10, 0.20, 0.30, 0.50, 0.80, 1.00, 1.20)
+
+    def __post_init__(self) -> None:
+        values = self.lookahead_values_m
+        if not values:
+            values = (self.lookahead_short_m, self.lookahead_long_m)
+        values = tuple(float(value) for value in values)
+        if not values:
+            raise ValueError("at least one lookahead distance is required")
+        if any(value <= 0.0 for value in values):
+            raise ValueError("lookahead distances must be > 0")
+        if any(value <= 0.0 for value in self.rho_values):
+            raise ValueError("rho values must be > 0")
+        if any(value <= 0.0 for value in self.omega_n_values):
+            raise ValueError("omega_n values must be > 0")
+        if any(value <= 0.0 for value in self.zeta_values):
+            raise ValueError("zeta values must be > 0")
+        if self.representative_rho <= 0.0:
+            raise ValueError("representative_rho must be > 0")
+        if self.representative_omega_n is not None and self.representative_omega_n <= 0.0:
+            raise ValueError("representative_omega_n must be > 0")
+        if self.representative_zeta <= 0.0:
+            raise ValueError("representative_zeta must be > 0")
+        object.__setattr__(self, "lookahead_values_m", values)
+        object.__setattr__(self, "lookahead_short_m", values[0])
+        object.__setattr__(self, "lookahead_long_m", values[-1])
 
 
 def load_experiment_config(path: str | Path) -> ExperimentConfig:
@@ -121,6 +151,11 @@ def experiment_config_from_mapping(data: Mapping[str, Any], base_dir: Path | Non
     representative = _mapping(sweep.get("representative"))
     experiment = _mapping(data.get("experiment"))
     lookahead_sweep = _mapping(data.get("lookahead_sweep"))
+    lookahead_values = _lookahead_values(lookahead)
+    omega_n_values = _optional_float_tuple(sweep, ("omega_n", "omega_n_radps", "omega_n_values"))
+    representative_omega_n = _optional_float(representative, ("omega_n", "omega_n_radps"))
+    if omega_n_values and representative_omega_n is None:
+        representative_omega_n = omega_n_values[0]
 
     output_dir = Path(str(experiment.get("output_dir", "results/access_ecpp_fixed_speed")))
     export_raw = experiment.get("export_tex_project_dir", "../tex_docker_environment/projects/fumiya_ieee_access")
@@ -128,13 +163,16 @@ def experiment_config_from_mapping(data: Mapping[str, Any], base_dir: Path | Non
 
     return ExperimentConfig(
         control=control,
-        lookahead_short_m=_float(lookahead, "short_m", 0.50),
-        lookahead_long_m=_float(lookahead, "long_m", 1.20),
+        lookahead_short_m=lookahead_values[0],
+        lookahead_long_m=lookahead_values[-1],
+        lookahead_values_m=lookahead_values,
         initial_e_y_m=_float(initial, "e_y_m", 0.10),
         initial_e_psi_deg=_float(initial, "e_psi_deg", 15.0),
-        rho_values=tuple(float(v) for v in sweep.get("rho", (1.0, 1.5, 2.0))),
+        rho_values=() if omega_n_values else tuple(float(v) for v in sweep.get("rho", (1.0, 1.5, 2.0))),
+        omega_n_values=omega_n_values,
         zeta_values=tuple(float(v) for v in sweep.get("zeta", (1.0 / math.sqrt(2.0), 1.0, 1.4))),
         representative_rho=_float(representative, "rho", 1.5),
+        representative_omega_n=representative_omega_n,
         representative_zeta=_float(representative, "zeta", 1.0),
         max_steps=int(experiment.get("max_steps", 1100)),
         output_dir=_resolve_path(base_dir, output_dir),
@@ -197,11 +235,14 @@ def _path_specs(raw: Any) -> tuple[PathSpec, ...]:
     for item in raw:
         if not isinstance(item, Mapping):
             raise ValueError("path entries must be mappings")
+        evaluation = _mapping(item.get("evaluation"))
         specs.append(PathSpec(
             key=str(item["key"]),
             label=str(item.get("label", item["key"])),
             type=str(item.get("type", item["key"])),
             params=dict(_mapping(item.get("params"))),
+            evaluation_type=str(evaluation["type"]) if "type" in evaluation else None,
+            evaluation_params=_evaluation_params(evaluation),
         ))
     return tuple(specs)
 
@@ -210,8 +251,51 @@ def _mapping(value: Any) -> Mapping[str, Any]:
     return value if isinstance(value, Mapping) else {}
 
 
+def _evaluation_params(data: Mapping[str, Any]) -> dict[str, Any]:
+    if "params" in data:
+        return dict(_mapping(data.get("params")))
+    return {str(key): value for key, value in data.items() if key not in {"type", "label"}}
+
+
 def _float(data: Mapping[str, Any], key: str, default: float) -> float:
     return float(data.get(key, default))
+
+
+def _optional_float(data: Mapping[str, Any], keys: tuple[str, ...]) -> float | None:
+    for key in keys:
+        if key in data and data[key] is not None:
+            return float(data[key])
+    return None
+
+
+def _optional_float_tuple(data: Mapping[str, Any], keys: tuple[str, ...]) -> tuple[float, ...]:
+    for key in keys:
+        if key in data and data[key] is not None:
+            raw = data[key]
+            if isinstance(raw, (str, bytes)) or not hasattr(raw, "__iter__"):
+                values = (float(raw),)
+            else:
+                values = tuple(float(value) for value in raw)
+            if not values:
+                raise ValueError(f"gain_sweep.{key} must contain at least one value")
+            return values
+    return ()
+
+
+def _lookahead_values(data: Mapping[str, Any]) -> tuple[float, ...]:
+    if "values_m" in data:
+        values = tuple(float(value) for value in data["values_m"])
+    elif "value_m" in data:
+        values = (float(data["value_m"]),)
+    elif "m" in data:
+        values = (float(data["m"]),)
+    else:
+        values = (_float(data, "short_m", 0.50), _float(data, "long_m", 1.20))
+    if not values:
+        raise ValueError("lookahead.values_m must contain at least one value")
+    if any(value <= 0.0 for value in values):
+        raise ValueError("lookahead distances must be > 0")
+    return values
 
 
 def _resolve_path(base_dir: Path, path: Path) -> Path:
