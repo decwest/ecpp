@@ -1,0 +1,37 @@
+extends: ../defaults.yaml
+
+lookahead:
+  values_m: [0.50, 1.00]
+
+methods: [PP, ECPP]
+
+initial_condition:
+  e_y_m: 0.0
+  e_psi_deg: 0.0
+
+gain_sweep:
+  omega_n: [0.71, 1.41, 2.12, 2.83]
+  zeta: [0.707, 1.0, 1.5]
+  representative:
+    omega_n: 1.41
+    zeta: 1.0
+
+paths:
+  - key: right_angle
+    label: Right-angle
+    type: corner-stress
+    params:
+      start_xy: [0.0, 2.0]
+      segment_lengths: [2.0, 7.0]
+      headings_deg: [-90.0, 0.0]
+      points_per_meter: 100.0
+    evaluation:
+      start_xy: [0.0, 2.0]
+      segment_lengths: [2.0, 5.0]
+      headings_deg: [-90.0, 0.0]
+      points_per_meter: 100.0
+
+experiment:
+  max_steps: 1400
+  output_dir: results/access_test2_right_angle
+  export_tex_project_dir: ../tex_docker_environment/projects/fumiya_ieee_access

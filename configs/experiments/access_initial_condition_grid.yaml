@@ -1,30 +1,20 @@
-control:
-  v_max: 0.50
-  omega_max: 2.00
-  dt: 0.020
-  goal_tolerance_dist: 0.02
-  goal_tolerance_heading_deg: 2.0
+extends: ../defaults.yaml
 
 lookahead:
-  short_m: 0.50
-  long_m: 1.20
+  values_m: [1.00]
 
-initial_condition:
-  e_y_m: 0.10
-  e_psi_deg: -15.0
+methods: [PP, DPP, ECPP without gate, ECPP]
+
+initial_conditions:
+  e_y_m: [0.0, 0.3, 1.0]
+  e_psi_deg: [0.0, -30.0, -90.0]
 
 gain_sweep:
-  rho: [1.0, 1.5, 2.0]
-  zeta: [0.70710678, 1.0, 1.4]
+  rho: [3.0]
+  zeta: [1.0]
   representative:
-    rho: 1.5
+    rho: 3.0
     zeta: 1.0
-
-gate:
-  mode: ey_only
-  sigmoid_endpoint_value: 0.01
-  error_on: 0.10
-  error_off: 0.50
 
 paths:
   - key: straight
@@ -40,7 +30,7 @@ paths:
     label: Arc
     type: arc
     params:
-      radius: 1.5
+      radius: 3.0
       angle_deg: 180.0
       num_points: 1200
     evaluation:
@@ -49,5 +39,5 @@ paths:
 
 experiment:
   max_steps: 1100
-  output_dir: results/access_ecpp_fixed_speed
+  output_dir: results/access_initial_condition_grid
   export_tex_project_dir: ../tex_docker_environment/projects/fumiya_ieee_access

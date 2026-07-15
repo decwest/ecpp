@@ -9,6 +9,30 @@ from typing import Any
 import yaml
 
 
+DEFAULT_METHOD_LABELS = ("PP", "DPP", "ECPP without gate", "ECPP")
+METHOD_ALIASES = {
+    "pp": "PP",
+    "pure-pursuit": "PP",
+    "pure_pursuit": "PP",
+    "pure pursuit": "PP",
+    "dpp": "DPP",
+    "ecpp-without-gate": "ECPP without gate",
+    "ecpp_without_gate": "ECPP without gate",
+    "ecpp without gate": "ECPP without gate",
+    "ecpp-nogate": "ECPP without gate",
+    "ecpp_nogate": "ECPP without gate",
+    "ecpp-no-gate": "ECPP without gate",
+    "ecpp_no_gate": "ECPP without gate",
+    "ecpp": "ECPP",
+    "ecpp-ey": "ECPP ey",
+    "ecpp_ey": "ECPP ey",
+    "ecpp ey": "ECPP ey",
+    "ecpp-ey-gate": "ECPP ey",
+    "ecpp_ey_gate": "ECPP ey",
+    "ecpp ey gate": "ECPP ey",
+}
+
+
 @dataclass(frozen=True)
 class EcppConfig:
     lookahead_m: float = 1.20
@@ -27,7 +51,7 @@ class EcppConfig:
     ecpp_gate_error_on: float = 0.10
     ecpp_gate_error_off: float = 0.50
     ecpp_gate_sigmoid_endpoint_value: float = 0.01
-    ecpp_gate_mode: str = "sigmoid"
+    ecpp_gate_mode: str = "ey_only"
     dpp_omega_n: float = 1.0
     dpp_zeta: float = 1.0
     dpp_preview_time: float = 0.5
@@ -57,8 +81,8 @@ class EcppConfig:
             raise ValueError("gate error off threshold must be greater than on threshold")
         if not 0.0 < self.ecpp_gate_sigmoid_endpoint_value < 0.5:
             raise ValueError("sigmoid endpoint value must be in (0, 0.5)")
-        if self.ecpp_gate_mode not in {"sigmoid", "always_on", "off"}:
-            raise ValueError("ecpp_gate_mode must be sigmoid, always_on, or off")
+        if self.ecpp_gate_mode not in {"sigmoid", "ey_only", "always_on", "off"}:
+            raise ValueError("ecpp_gate_mode must be sigmoid, ey_only, always_on, or off")
 
 
 @dataclass(frozen=True)
@@ -74,11 +98,13 @@ class PathSpec:
 @dataclass(frozen=True)
 class ExperimentConfig:
     control: EcppConfig = field(default_factory=EcppConfig)
+    method_labels: tuple[str, ...] = DEFAULT_METHOD_LABELS
     lookahead_short_m: float = 0.50
     lookahead_long_m: float = 1.20
     lookahead_values_m: tuple[float, ...] = ()
     initial_e_y_m: float = 0.10
     initial_e_psi_deg: float = 15.0
+    initial_conditions: tuple[tuple[float, float], ...] = ()
     rho_values: tuple[float, ...] = (1.0, 1.5, 2.0)
     omega_n_values: tuple[float, ...] = ()
     zeta_values: tuple[float, ...] = (1.0 / math.sqrt(2.0), 1.0, 1.4)
@@ -101,8 +127,17 @@ class ExperimentConfig:
         values = tuple(float(value) for value in values)
         if not values:
             raise ValueError("at least one lookahead distance is required")
+        method_labels = tuple(_canonical_method_label(label) for label in self.method_labels)
+        if not method_labels:
+            raise ValueError("at least one method is required")
         if any(value <= 0.0 for value in values):
             raise ValueError("lookahead distances must be > 0")
+        initial_conditions = self.initial_conditions
+        if not initial_conditions:
+            initial_conditions = ((float(self.initial_e_y_m), float(self.initial_e_psi_deg)),)
+        initial_conditions = tuple((float(e_y), float(e_psi)) for e_y, e_psi in initial_conditions)
+        if not initial_conditions:
+            raise ValueError("at least one initial condition is required")
         if any(value <= 0.0 for value in self.rho_values):
             raise ValueError("rho values must be > 0")
         if any(value <= 0.0 for value in self.omega_n_values):
@@ -118,6 +153,10 @@ class ExperimentConfig:
         object.__setattr__(self, "lookahead_values_m", values)
         object.__setattr__(self, "lookahead_short_m", values[0])
         object.__setattr__(self, "lookahead_long_m", values[-1])
+        object.__setattr__(self, "method_labels", method_labels)
+        object.__setattr__(self, "initial_conditions", initial_conditions)
+        object.__setattr__(self, "initial_e_y_m", initial_conditions[0][0])
+        object.__setattr__(self, "initial_e_psi_deg", initial_conditions[0][1])
 
 
 def load_experiment_config(path: str | Path) -> ExperimentConfig:
@@ -147,6 +186,7 @@ def experiment_config_from_mapping(data: Mapping[str, Any], base_dir: Path | Non
 
     lookahead = _mapping(data.get("lookahead"))
     initial = _mapping(data.get("initial_condition"))
+    initial_conditions_data = data.get("initial_conditions")
     sweep = _mapping(data.get("gain_sweep"))
     representative = _mapping(sweep.get("representative"))
     experiment = _mapping(data.get("experiment"))
@@ -163,11 +203,13 @@ def experiment_config_from_mapping(data: Mapping[str, Any], base_dir: Path | Non
 
     return ExperimentConfig(
         control=control,
+        method_labels=_method_labels(data.get("methods")),
         lookahead_short_m=lookahead_values[0],
         lookahead_long_m=lookahead_values[-1],
         lookahead_values_m=lookahead_values,
         initial_e_y_m=_float(initial, "e_y_m", 0.10),
         initial_e_psi_deg=_float(initial, "e_psi_deg", 15.0),
+        initial_conditions=_initial_conditions(initial_conditions_data, initial),
         rho_values=() if omega_n_values else tuple(float(v) for v in sweep.get("rho", (1.0, 1.5, 2.0))),
         omega_n_values=omega_n_values,
         zeta_values=tuple(float(v) for v in sweep.get("zeta", (1.0 / math.sqrt(2.0), 1.0, 1.4))),
@@ -247,8 +289,56 @@ def _path_specs(raw: Any) -> tuple[PathSpec, ...]:
     return tuple(specs)
 
 
+def _initial_conditions(raw: Any, legacy_initial: Mapping[str, Any]) -> tuple[tuple[float, float], ...]:
+    if raw is None:
+        return ()
+    if isinstance(raw, Mapping):
+        e_y_values = _float_values(raw.get("e_y_m", legacy_initial.get("e_y_m", 0.10)))
+        e_psi_values = _float_values(raw.get("e_psi_deg", legacy_initial.get("e_psi_deg", 15.0)))
+        return tuple((e_y, e_psi) for e_y in e_y_values for e_psi in e_psi_values)
+    if isinstance(raw, (str, bytes)) or not hasattr(raw, "__iter__"):
+        raise ValueError("initial_conditions must be a mapping or a list of mappings")
+    conditions = []
+    for item in raw:
+        item_mapping = _mapping(item)
+        if not item_mapping:
+            raise ValueError("initial_conditions list entries must be mappings")
+        conditions.append((
+            _float(item_mapping, "e_y_m", _float(legacy_initial, "e_y_m", 0.10)),
+            _float(item_mapping, "e_psi_deg", _float(legacy_initial, "e_psi_deg", 15.0)),
+        ))
+    return tuple(conditions)
+
+
 def _mapping(value: Any) -> Mapping[str, Any]:
     return value if isinstance(value, Mapping) else {}
+
+
+def _method_labels(raw: Any) -> tuple[str, ...]:
+    if raw is None:
+        return DEFAULT_METHOD_LABELS
+    if isinstance(raw, Mapping):
+        raw = raw.get("enabled", raw.get("include", ()))
+    if isinstance(raw, (str, bytes)) or not hasattr(raw, "__iter__"):
+        labels = (raw,)
+    else:
+        labels = tuple(raw)
+    if not labels:
+        raise ValueError("methods must contain at least one method")
+    return tuple(_canonical_method_label(str(label)) for label in labels)
+
+
+def _canonical_method_label(label: str) -> str:
+    normalized = label.strip().lower().replace("/", "-")
+    normalized = " ".join(normalized.split())
+    normalized = normalized.replace(" ", "-")
+    if normalized in METHOD_ALIASES:
+        return METHOD_ALIASES[normalized]
+    normalized_spaces = normalized.replace("-", " ")
+    if normalized_spaces in METHOD_ALIASES:
+        return METHOD_ALIASES[normalized_spaces]
+    allowed = ", ".join(dict.fromkeys(METHOD_ALIASES.values()))
+    raise ValueError(f"unsupported method: {label}. Allowed methods: {allowed}")
 
 
 def _evaluation_params(data: Mapping[str, Any]) -> dict[str, Any]:
@@ -280,6 +370,15 @@ def _optional_float_tuple(data: Mapping[str, Any], keys: tuple[str, ...]) -> tup
                 raise ValueError(f"gain_sweep.{key} must contain at least one value")
             return values
     return ()
+
+
+def _float_values(raw: Any) -> tuple[float, ...]:
+    if isinstance(raw, (str, bytes)) or not hasattr(raw, "__iter__"):
+        return (float(raw),)
+    values = tuple(float(value) for value in raw)
+    if not values:
+        raise ValueError("float value lists must contain at least one value")
+    return values
 
 
 def _lookahead_values(data: Mapping[str, Any]) -> tuple[float, ...]:

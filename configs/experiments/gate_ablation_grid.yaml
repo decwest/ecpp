@@ -1,0 +1,10 @@
+extends: access_initial_condition_grid.yaml
+
+methods: [PP, DPP, ECPP without gate, ECPP, ECPP ey]
+
+gate:
+  mode: sigmoid
+
+experiment:
+  output_dir: results/gate_ablation_grid
+  export_tex_project_dir: ""

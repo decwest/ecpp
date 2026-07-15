@@ -36,8 +36,16 @@ epsilon_psi = |e_psi - sin(e_psi)| / |sin(e_psi)|
 ```
 
 Both components use the same on/off error-rate thresholds, `error_on = 0.10`
-and `error_off = 0.50` by default. The final gate is
-`sigma = sigma_y(epsilon_y) * sigma_psi(epsilon_psi)`.
+and `error_off = 0.50` by default. Gate modes (`gate.mode` in the config):
+
+- `ey_only` (default, adopted design): `sigma = sigma_y(epsilon_y)`. The
+  heading channel needs no gate because the compensation already uses the
+  bounded `sin(e_psi)` form, which matches the exact PP curvature's heading
+  dependence; the model error that must be gated grows with `e_y` only.
+- `sigmoid` (legacy product gate): `sigma = sigma_y(epsilon_y) * sigma_psi(epsilon_psi)`.
+  Kept for ablation; it disables heading damping in the small-`e_y` /
+  large-`e_psi` regime where damping helps most.
+- `always_on` / `off`: ablation modes (`sigma = 1` / `sigma = 0`).
 
 The package does not implement velocity scheduling, acceleration-window search,
 or non-differential platform control.

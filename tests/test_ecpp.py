@@ -66,3 +66,29 @@ def test_ecpp_psi_gate_uses_sine_linearization_error_rate():
 
     terms_far = calc_ecpp_terms(np.array([0.0, 0.0, math.pi / 2.0]), np.array([0.5, 0.0]), 0, path, distances, 0.5, config)
     assert terms_far.sigma_psi < config.ecpp_gate_sigmoid_endpoint_value
+
+
+def test_ecpp_ey_only_gate_ignores_heading_error():
+    path = straight_line_path(length=2.0, num_points=80)
+    distances = calc_path_distances(path)
+    pose_on_path_large_heading = np.array([0.0, 0.0, math.pi / 2.0])
+
+    config_ey = EcppConfig(ecpp_gate_mode="ey_only")
+    terms_ey = calc_ecpp_terms(pose_on_path_large_heading, np.array([0.5, 0.0]), 0, path, distances, 0.5, config_ey)
+    assert terms_ey.sigma == pytest.approx(terms_ey.sigma_y)
+    assert terms_ey.sigma > 0.98
+
+    config_product = EcppConfig(ecpp_gate_mode="sigmoid")
+    terms_product = calc_ecpp_terms(pose_on_path_large_heading, np.array([0.5, 0.0]), 0, path, distances, 0.5, config_product)
+    assert terms_product.sigma < 0.02
+
+
+def test_ecpp_ey_only_gate_closes_far_from_path():
+    path = straight_line_path(length=2.0, num_points=80)
+    distances = calc_path_distances(path)
+    lookahead = 0.5
+    config = EcppConfig(ecpp_gate_mode="ey_only", ecpp_gate_error_on=0.10, ecpp_gate_error_off=0.50)
+
+    pose_far = np.array([0.0, 2.0 * lookahead, 0.0])
+    terms_far = calc_ecpp_terms(pose_far, np.array([0.5, 0.0]), 0, path, distances, lookahead, config)
+    assert terms_far.sigma < config.ecpp_gate_sigmoid_endpoint_value + 1e-9

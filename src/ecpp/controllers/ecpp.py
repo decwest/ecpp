@@ -80,24 +80,27 @@ def calc_ecpp_terms(
     else:
         epsilon_psi = abs(e_psi - sin_e_psi) / max(abs(sin_e_psi), eps)
 
+    sub_gate_mode = "sigmoid" if gate_mode == "ey_only" else gate_mode
     sigma_y = gate_abs_by_mode(
         epsilon_y,
         config.ecpp_gate_error_on,
         config.ecpp_gate_error_off,
         config.ecpp_gate_sigmoid_endpoint_value,
-        gate_mode,
+        sub_gate_mode,
     )
     sigma_psi = gate_abs_by_mode(
         epsilon_psi,
         config.ecpp_gate_error_on,
         config.ecpp_gate_error_off,
         config.ecpp_gate_sigmoid_endpoint_value,
-        gate_mode,
+        sub_gate_mode,
     )
     if gate_mode == "always_on":
         sigma = 1.0
     elif gate_mode == "off":
         sigma = 0.0
+    elif gate_mode == "ey_only":
+        sigma = sigma_y
     else:
         sigma = sigma_y * sigma_psi
 

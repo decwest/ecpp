@@ -18,24 +18,25 @@ class AccessExperimentOutput:
 def run_access_experiment(experiment: ExperimentConfig) -> AccessExperimentOutput:
     results: dict[str, TrackingResult] = {}
     for scenario in build_scenarios(experiment):
-        condition = initial_condition(scenario, experiment.initial_e_y_m, experiment.initial_e_psi_deg)
-        for variant in nominal_variants(experiment):
-            omega_n = variant.omega_n
-            zeta = variant.zeta if variant.zeta is not None else experiment.representative_zeta
-            config = config_for_variant(
-                experiment.control,
-                lookahead_m=variant.lookahead_m,
-                omega_n=omega_n if omega_n is not None else representative_omega_n(experiment, variant.lookahead_m),
-                zeta=zeta,
-                gate_mode=variant.gate_mode if variant.method == "ecpp" else "off",
-            )
-            key = result_key("test1", scenario.key, condition.key, variant)
-            try:
-                results[key] = run_path_tracking(scenario, condition, variant, config)
-            except ValueError as exc:
-                if variant.method != "dpp":
-                    raise
-                warnings.warn(f"skip invalid DPP variant {variant.key}: {exc}", RuntimeWarning, stacklevel=2)
+        for e_y_m, e_psi_deg in experiment.initial_conditions:
+            condition = initial_condition(scenario, e_y_m, e_psi_deg)
+            for variant in nominal_variants(experiment):
+                omega_n = variant.omega_n
+                zeta = variant.zeta if variant.zeta is not None else experiment.representative_zeta
+                config = config_for_variant(
+                    experiment.control,
+                    lookahead_m=variant.lookahead_m,
+                    omega_n=omega_n if omega_n is not None else representative_omega_n(experiment, variant.lookahead_m),
+                    zeta=zeta,
+                    gate_mode=variant.gate_mode if variant.method == "ecpp" else "off",
+                )
+                key = result_key("test1", scenario.key, condition.key, variant)
+                try:
+                    results[key] = run_path_tracking(scenario, condition, variant, config)
+                except ValueError as exc:
+                    if variant.method != "dpp":
+                        raise
+                    warnings.warn(f"skip invalid DPP variant {variant.key}: {exc}", RuntimeWarning, stacklevel=2)
     return AccessExperimentOutput(results=results)
 
 
@@ -64,17 +65,22 @@ def initial_condition(scenario: PathScenario, e_y_m: float, e_psi_deg: float) ->
 
 def nominal_variants(experiment: ExperimentConfig) -> tuple[MethodVariant, ...]:
     variants: list[MethodVariant] = []
+    enabled_methods = set(experiment.method_labels)
+    ecpp_gate_mode = experiment.control.ecpp_gate_mode
+    if ecpp_gate_mode not in {"sigmoid", "ey_only"}:
+        ecpp_gate_mode = "sigmoid"
     for lookahead in experiment.lookahead_values_m:
-        variants.append(MethodVariant(variant_key("PP", lookahead, None, None, None), "PP", "pp", "none", lookahead))
+        if "PP" in enabled_methods:
+            variants.append(MethodVariant(variant_key("PP", lookahead, None, None, None), "PP", "pp", "none", lookahead))
         if experiment.omega_n_values:
             for omega_n in experiment.omega_n_values:
                 for zeta in experiment.zeta_values:
-                    variants.extend(method_variants_for_design(lookahead, None, zeta, omega_n))
+                    variants.extend(method_variants_for_design(lookahead, None, zeta, omega_n, enabled_methods, ecpp_gate_mode))
         else:
             for rho in experiment.rho_values:
                 for zeta in experiment.zeta_values:
                     omega_n = rho * math.sqrt(2.0) * experiment.control.v_max / lookahead
-                    variants.extend(method_variants_for_design(lookahead, rho, zeta, omega_n))
+                    variants.extend(method_variants_for_design(lookahead, rho, zeta, omega_n, enabled_methods, ecpp_gate_mode))
     return tuple(variants)
 
 
@@ -83,10 +89,23 @@ def method_variants_for_design(
     rho: float | None,
     zeta: float,
     omega_n: float,
+    enabled_methods: set[str],
+    ecpp_gate_mode: str = "sigmoid",
 ) -> list[MethodVariant]:
-    return [
-        MethodVariant(variant_key("DPP", lookahead, rho, zeta, omega_n), "DPP", "dpp", "none", lookahead, rho, zeta, omega_n),
-        MethodVariant(
+    variants = []
+    if "DPP" in enabled_methods:
+        variants.append(MethodVariant(
+            variant_key("DPP", lookahead, rho, zeta, omega_n),
+            "DPP",
+            "dpp",
+            "none",
+            lookahead,
+            rho,
+            zeta,
+            omega_n,
+        ))
+    if "ECPP without gate" in enabled_methods:
+        variants.append(MethodVariant(
             variant_key("ECPP without gate", lookahead, rho, zeta, omega_n),
             "ECPP without gate",
             "ecpp",
@@ -95,9 +114,30 @@ def method_variants_for_design(
             rho,
             zeta,
             omega_n,
-        ),
-        MethodVariant(variant_key("ECPP", lookahead, rho, zeta, omega_n), "ECPP", "ecpp", "sigmoid", lookahead, rho, zeta, omega_n),
-    ]
+        ))
+    if "ECPP" in enabled_methods:
+        variants.append(MethodVariant(
+            variant_key("ECPP", lookahead, rho, zeta, omega_n),
+            "ECPP",
+            "ecpp",
+            ecpp_gate_mode,
+            lookahead,
+            rho,
+            zeta,
+            omega_n,
+        ))
+    if "ECPP ey" in enabled_methods:
+        variants.append(MethodVariant(
+            variant_key("ECPP ey", lookahead, rho, zeta, omega_n),
+            "ECPP ey",
+            "ecpp",
+            "ey_only",
+            lookahead,
+            rho,
+            zeta,
+            omega_n,
+        ))
+    return variants
 
 
 def representative_omega_n(experiment: ExperimentConfig, lookahead_m: float) -> float:

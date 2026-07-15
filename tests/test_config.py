@@ -78,6 +78,41 @@ def test_nominal_variants_use_direct_omega_n_when_configured():
     assert all("wn1p2" in variant.key for variant in controlled)
 
 
+def test_nominal_variants_respect_enabled_methods():
+    experiment = experiment_config_from_mapping({
+        "methods": ["PP", "ECPP"],
+        "lookahead": {"values_m": [1.2]},
+        "gain_sweep": {"rho": [2.0], "zeta": [1.0]},
+    })
+
+    variants = nominal_variants(experiment)
+    assert experiment.method_labels == ("PP", "ECPP")
+    assert [variant.label for variant in variants] == ["PP", "ECPP"]
+
+
+def test_experiment_config_expands_initial_condition_grid():
+    experiment = experiment_config_from_mapping({
+        "initial_conditions": {
+            "e_y_m": [0.0, 0.3, 0.6],
+            "e_psi_deg": [0.0, -30.0, -60.0],
+        }
+    })
+
+    assert len(experiment.initial_conditions) == 9
+    assert experiment.initial_conditions[0] == (0.0, 0.0)
+    assert experiment.initial_conditions[-1] == (0.6, -60.0)
+    assert experiment.initial_e_y_m == 0.0
+    assert experiment.initial_e_psi_deg == 0.0
+
+
+def test_experiment_config_keeps_single_legacy_initial_condition():
+    experiment = experiment_config_from_mapping({
+        "initial_condition": {"e_y_m": 0.1, "e_psi_deg": -15.0}
+    })
+
+    assert experiment.initial_conditions == ((0.1, -15.0),)
+
+
 def test_arc_path_can_use_extended_control_path_and_shorter_evaluation_path():
     experiment = experiment_config_from_mapping({
         "paths": [

@@ -16,10 +16,13 @@ from ecpp.evaluation.tables import (
 from ecpp.simulation.runner import run_access_experiment
 from ecpp.visualization.animation import animate_result
 from ecpp.visualization.plots import (
+    plot_corner_zoom,
+    plot_condition_profiles,
     plot_curvature_sweep,
     plot_error_profiles,
     plot_gate_profiles,
     plot_omega_profiles,
+    plot_right_angle_common_legends,
     plot_trajectory_sweep,
 )
 
@@ -58,10 +61,13 @@ def main() -> None:
     write_latex_tables(tables_dir, experiment, rows)
 
     plot_trajectory_sweep(plots_dir / "trajectory_sweep", experiment, output.results)
+    plot_corner_zoom(plots_dir / "corner_zoom", experiment, output.results)
     plot_curvature_sweep(plots_dir / "curvature_sweep", experiment, output.results)
     plot_omega_profiles(plots_dir / "omega_profiles", experiment, output.results)
     plot_error_profiles(plots_dir / "error_profiles", experiment, output.results)
     plot_gate_profiles(plots_dir / "gate_profiles", experiment, output.results)
+    plot_right_angle_common_legends(plots_dir / "common_legend", experiment, output.results)
+    plot_condition_profiles(plots_dir / "by_condition", experiment, output.results)
 
     if args.save_animation:
         animations_dir.mkdir(parents=True, exist_ok=True)
@@ -89,9 +95,12 @@ def export_paper_assets(output_dir: Path, tex_project_dir: Path) -> None:
     tables_dest = tex_project_dir / "generated" / "tables"
     figures_dest.mkdir(parents=True, exist_ok=True)
     tables_dest.mkdir(parents=True, exist_ok=True)
-    for src in (output_dir / "plots").glob("*.*"):
+    for src in (output_dir / "plots").rglob("*.*"):
         if src.suffix.lower() in {".pdf", ".png"}:
-            shutil.copy2(src, figures_dest / src.name)
+            rel = src.relative_to(output_dir / "plots")
+            dest = figures_dest / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dest)
     for src in (output_dir / "tables").glob("fixed_speed_*.*"):
         if src.suffix.lower() in {".tex", ".csv"}:
             shutil.copy2(src, tables_dest / src.name)

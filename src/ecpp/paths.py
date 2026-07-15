@@ -51,11 +51,14 @@ def corner_stress_path(
     segment_lengths: tuple[float, ...] | list[float] = (0.8, 0.45, 0.8, 0.45, 0.8, 0.45, 0.8),
     headings_deg: tuple[float, ...] | list[float] = (0.0, 90.0, -45.0, 45.0, -90.0, 0.0, 90.0),
     points_per_meter: float = 160.0,
+    start_xy: tuple[float, float] | list[float] = (0.0, 0.0),
 ) -> np.ndarray:
     if len(segment_lengths) != len(headings_deg):
         raise ValueError("segment_lengths and headings_deg must have the same length")
+    if len(start_xy) != 2:
+        raise ValueError("start_xy must have two values")
     points: list[np.ndarray] = []
-    current = np.array([0.0, 0.0], dtype=float)
+    current = np.array([float(start_xy[0]), float(start_xy[1])], dtype=float)
     for index, (length, heading_deg) in enumerate(zip(segment_lengths, headings_deg)):
         if float(length) <= 0.0:
             raise ValueError("segment lengths must be > 0")
