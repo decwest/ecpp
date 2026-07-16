@@ -1,9 +1,14 @@
 control:
   v_max: 0.50
-  omega_max: 2.00
-  dt: 0.020
+  # Instantaneous state-update clip. This is not a velocity-smoother model.
+  omega_max: 1.50
+  dt: 0.03333333333333333
   goal_tolerance_dist: 0.02
   goal_tolerance_heading_deg: 2.0
+
+ecpp:
+  # Gain denominator: v_g = |v| + v_epsilon.
+  v_epsilon: 0.05
 
 lookahead:
   short_m: 0.50

@@ -1,8 +1,5 @@
 extends: ../defaults.yaml
 
-# control:
-#   omega_max: 1.00
-
 lookahead:
   values_m: [1.20]
 

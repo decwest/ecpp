@@ -12,7 +12,6 @@ import numpy as np
 from matplotlib.lines import Line2D
 
 from ..config import ExperimentConfig
-from ..evaluation.metrics import calc_signed_heading_errors, calc_signed_lateral_errors
 from ..geometry import calc_path_distances
 from ..simulation.path_tracking import TrackingResult
 
@@ -173,7 +172,7 @@ def plot_omega_profiles(output_stem: Path, experiment: ExperimentConfig, results
                 style = sweep_variant_style(result, index, len(selected), pp_present)
                 ax.plot(
                     result.times,
-                    result.omega_cmd,
+                    result.omega_raw,
                     color=style["color"],
                     linestyle=style["linestyle"],
                     linewidth=style["linewidth"],
@@ -212,8 +211,8 @@ def plot_error_profiles(output_stem: Path, experiment: ExperimentConfig, results
             pp_present = contains_pp(selected)
             for index, result in enumerate(selected):
                 style = sweep_variant_style(result, index, len(selected), pp_present)
-                ey = calc_signed_lateral_errors(result.poses, result.scenario.evaluation_path)
-                epsi = calc_signed_heading_errors(result.poses, result.scenario.evaluation_path)
+                ey = result.e_y
+                epsi = result.e_psi
                 for ax, values in ((ax_y, ey), (ax_psi, epsi)):
                     ax.plot(
                         result.times,
@@ -340,7 +339,7 @@ def plot_condition_profiles(output_dir: Path, experiment: ExperimentConfig, resu
                     selected,
                     lookahead,
                     r"$\omega$ [rad/s]",
-                    lambda result: result.omega_cmd,
+                    lambda result: result.omega_raw,
                     limit=experiment.control.omega_max,
                 )
                 plot_condition_time_profile(
@@ -348,14 +347,14 @@ def plot_condition_profiles(output_dir: Path, experiment: ExperimentConfig, resu
                     selected,
                     lookahead,
                     r"$e_y$ [m]",
-                    lambda result: calc_signed_lateral_errors(result.poses, result.scenario.evaluation_path),
+                    lambda result: result.e_y,
                 )
                 plot_condition_time_profile(
                     stem.with_name(f"{stem.name}_error_psi"),
                     selected,
                     lookahead,
                     r"$e_\theta$ [rad]",
-                    lambda result: calc_signed_heading_errors(result.poses, result.scenario.evaluation_path),
+                    lambda result: result.e_psi,
                 )
                 gate_results = [result for result in selected if result.variant.method == "ecpp"]
                 if gate_results:

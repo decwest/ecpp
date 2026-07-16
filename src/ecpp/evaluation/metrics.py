@@ -42,9 +42,16 @@ def count_zero_crossings(values: np.ndarray, deadband: float = 1e-3) -> int:
 
 
 def summarize_result(result: TrackingResult, config: EcppConfig) -> dict[str, object]:
-    ey = calc_signed_lateral_errors(result.poses, result.scenario.evaluation_path)
-    epsi = calc_signed_heading_errors(result.poses, result.scenario.evaluation_path)
+    # Tracking stores the same continuous segment projection used by the
+    # controller. Reusing it avoids reintroducing nearest-vertex quantization
+    # in the reported metrics.
+    ey = np.asarray(result.e_y, dtype=float)
+    epsi = np.asarray(result.e_psi, dtype=float)
     omega_expected = np.clip(result.curvatures * config.v_max, -config.omega_max, config.omega_max)
+    delta_t = np.diff(np.asarray(result.times, dtype=float))
+    delta_omega_raw = np.diff(np.asarray(result.omega_raw, dtype=float))
+    valid_rate = delta_t > 1e-12
+    omega_raw_rate = np.abs(delta_omega_raw[valid_rate] / delta_t[valid_rate])
     corner_metrics = summarize_corner_response(result)
     return {
         "path_name": result.scenario.key,
@@ -81,9 +88,15 @@ def summarize_result(result: TrackingResult, config: EcppConfig) -> dict[str, ob
         "max_abs_heading_error_rad": float(np.max(np.abs(epsi))),
         "max_abs_heading_error_deg": float(math.degrees(np.max(np.abs(epsi)))),
         "max_abs_kappa_inv_m": float(np.max(np.abs(result.curvatures))) if len(result.curvatures) else float("nan"),
-        "clip_ratio": float(np.mean(np.abs(result.omega_raw) > config.omega_max + 1e-12)),
-        "clip_time_s": float(np.sum(np.abs(result.omega_raw) > config.omega_max + 1e-12) * config.dt),
-        "initial_sigma": finite_at(result.sigma, 1),
+        "clip_ratio": float(np.mean(np.abs(result.omega_raw) >= config.omega_max)),
+        "clip_time_s": float(np.sum(np.abs(result.omega_raw) >= config.omega_max) * config.dt),
+        "mean_abs_omega_raw_rate_radps2": (
+            float(np.mean(omega_raw_rate)) if len(omega_raw_rate) else float("nan")
+        ),
+        "max_abs_omega_raw_rate_radps2": (
+            float(np.max(omega_raw_rate)) if len(omega_raw_rate) else float("nan")
+        ),
+        "initial_sigma": finite_at(result.sigma, 0),
         "min_sigma": finite_min(result.sigma),
         "min_sigma_y": finite_min(result.sigma_y),
         "min_sigma_psi": finite_min(result.sigma_psi),

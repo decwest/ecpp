@@ -17,6 +17,9 @@ dependencies = [
     "PyYAML>=6.0",
 ]
 
+[project.scripts]
+ecpp-paper = "ecpp.paper.__main__:main"
+
 [dependency-groups]
 dev = [
     "pytest>=8.0",

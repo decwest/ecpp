@@ -132,9 +132,11 @@ def exp1_trial_metrics(trial: dict[str, np.ndarray], ref: np.ndarray,
     if len(below):
         capture = float(t_eval[below[0]])
 
-    w_nav = trial.get("w_nav", np.array([]))
-    w_valid = w_nav[np.isfinite(w_nav)] if len(w_nav) else np.array([])
-    sat = float(np.mean(np.abs(w_valid) >= 0.995)) if len(w_valid) else math.nan
+    # Saturation demand is defined on the raw controller request.  w_nav and
+    # /cmd_vel_smoothed remain diagnostic signals only.
+    w_cmd = trial.get("w_cmd", np.array([]))
+    w_valid = w_cmd[np.isfinite(w_cmd)] if len(w_cmd) else np.array([])
+    sat = float(np.mean(np.abs(w_valid) >= 1.0)) if len(w_valid) else math.nan
 
     sigma = trial.get("sigma", np.array([]))
     sigma_valid = sigma[np.isfinite(sigma)] if len(sigma) else np.array([])

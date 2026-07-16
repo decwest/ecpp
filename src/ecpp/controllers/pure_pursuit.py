@@ -5,7 +5,7 @@ import math
 import numpy as np
 
 from ..config import EcppConfig
-from ..lookahead import calc_lookahead_position
+from ..lookahead import PathLocation, PathProjection, calc_lookahead_position, resolve_path_projection
 
 
 def calc_pp_curvature_to_point(current_pose: np.ndarray, target_xy: np.ndarray) -> float:
@@ -24,12 +24,13 @@ def calc_pp_curvature_to_point(current_pose: np.ndarray, target_xy: np.ndarray) 
 
 def calc_pp_curvature(
     current_pose: np.ndarray,
-    current_idx: np.intp | int,
+    current_idx: PathProjection | PathLocation | np.intp | int,
     path: np.ndarray,
     path_distances: np.ndarray,
     lookahead_distance: float,
     config: EcppConfig | None = None,
 ) -> tuple[float, np.ndarray]:
     del config
-    lookahead_pos, _ = calc_lookahead_position(current_idx, path, path_distances, lookahead_distance)
+    projection = resolve_path_projection(current_pose, current_idx, path, path_distances)
+    lookahead_pos, _ = calc_lookahead_position(projection, path, path_distances, lookahead_distance)
     return calc_pp_curvature_to_point(current_pose, lookahead_pos), lookahead_pos

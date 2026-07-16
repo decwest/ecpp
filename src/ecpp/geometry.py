@@ -58,8 +58,17 @@ def as_pose_path(path: np.ndarray) -> np.ndarray:
 
 
 def pose_from_path_error(path: np.ndarray, e_y_m: float, e_psi_deg: float) -> np.ndarray:
-    start = as_pose_path(path)[0]
-    heading = float(start[2])
+    path = np.asarray(path, dtype=float)
+    if path.ndim != 2 or path.shape[1] < 2 or len(path) < 2:
+        raise ValueError("path must contain at least two x/y vertices")
+    heading = None
+    for delta in np.diff(path[:, :2], axis=0):
+        if float(np.linalg.norm(delta)) > 1e-12:
+            heading = float(math.atan2(delta[1], delta[0]))
+            break
+    if heading is None:
+        raise ValueError("path must contain a non-zero segment")
+    start = path[0, :2]
     left_normal = np.array([-math.sin(heading), math.cos(heading)], dtype=float)
     return np.array([
         float(start[0] + e_y_m * left_normal[0]),

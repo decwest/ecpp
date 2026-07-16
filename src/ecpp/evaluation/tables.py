@@ -8,7 +8,7 @@ import numpy as np
 
 from ..config import EcppConfig, ExperimentConfig
 from ..simulation.path_tracking import TrackingResult
-from .metrics import calc_signed_heading_errors, calc_signed_lateral_errors, summarize_result
+from .metrics import summarize_result
 
 
 METHOD_ORDER = {"PP": 0, "DPP": 1, "ECPP without gate": 2, "ECPP": 3, "ECPP ey": 4}
@@ -53,8 +53,8 @@ def write_timeseries(series_dir: Path, results: dict[str, TrackingResult]) -> No
         "sigma",
     ]
     for key, result in results.items():
-        ey = calc_signed_lateral_errors(result.poses, result.scenario.evaluation_path)
-        epsi = calc_signed_heading_errors(result.poses, result.scenario.evaluation_path)
+        ey = result.e_y
+        epsi = result.e_psi
         with (series_dir / f"{key}.csv").open("w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=fields)
             writer.writeheader()

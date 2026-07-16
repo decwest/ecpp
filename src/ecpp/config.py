@@ -10,6 +10,7 @@ import yaml
 
 
 DEFAULT_METHOD_LABELS = ("PP", "DPP", "ECPP without gate", "ECPP")
+SIM_OMEGA_LIMIT_RADPS = 1.5
 METHOD_ALIASES = {
     "pp": "PP",
     "pure-pursuit": "PP",
@@ -37,8 +38,8 @@ METHOD_ALIASES = {
 class EcppConfig:
     lookahead_m: float = 1.20
     v_max: float = 0.50
-    omega_max: float = 1.00
-    dt: float = 0.020
+    omega_max: float = SIM_OMEGA_LIMIT_RADPS
+    dt: float = 1.0 / 30.0
     goal_tolerance_dist: float = 0.02
     goal_tolerance_heading: float = math.radians(2.0)
     settling_e_y: float = 0.02
@@ -54,25 +55,25 @@ class EcppConfig:
     ecpp_gate_mode: str = "ey_only"
     dpp_omega_n: float = 1.0
     dpp_zeta: float = 1.0
-    dpp_preview_time: float = 0.5
     dpp_gain_speed: float = 0.50
-    dpp_v_min: float = 0.05
 
     def __post_init__(self) -> None:
         if self.lookahead_m <= 0.0:
             raise ValueError("lookahead_m must be > 0")
         if self.v_max <= 0.0:
             raise ValueError("v_max must be > 0")
-        if self.omega_max <= 0.0:
-            raise ValueError("omega_max must be > 0")
+        if not math.isclose(
+            self.omega_max, SIM_OMEGA_LIMIT_RADPS, rel_tol=0.0, abs_tol=1e-12
+        ):
+            raise ValueError(
+                "omega_max is fixed at 1.5 rad/s for the paper simulation"
+            )
         if self.dt <= 0.0:
             raise ValueError("dt must be > 0")
         if self.ecpp_omega_n <= 0.0 or self.dpp_omega_n <= 0.0:
             raise ValueError("omega_n values must be > 0")
         if self.ecpp_zeta <= 0.0 or self.dpp_zeta <= 0.0:
             raise ValueError("zeta values must be > 0")
-        if self.dpp_preview_time <= 0.0:
-            raise ValueError("dpp_preview_time must be > 0")
         if self.ecpp_v_epsilon <= 0.0:
             raise ValueError("ecpp_v_epsilon must be > 0")
         if self.ecpp_gate_error_on < 0.0:
@@ -170,6 +171,7 @@ def experiment_config_from_mapping(data: Mapping[str, Any], base_dir: Path | Non
     control = EcppConfig()
 
     control_data = _mapping(data.get("control"))
+    ecpp_data = _mapping(data.get("ecpp"))
     gate_data = _mapping(data.get("gate"))
     control = replace(
         control,
@@ -178,6 +180,7 @@ def experiment_config_from_mapping(data: Mapping[str, Any], base_dir: Path | Non
         dt=_float(control_data, "dt", control.dt),
         goal_tolerance_dist=_float(control_data, "goal_tolerance_dist", control.goal_tolerance_dist),
         goal_tolerance_heading=math.radians(_float(control_data, "goal_tolerance_heading_deg", math.degrees(control.goal_tolerance_heading))),
+        ecpp_v_epsilon=_float(ecpp_data, "v_epsilon", control.ecpp_v_epsilon),
         ecpp_gate_mode=str(gate_data.get("mode", control.ecpp_gate_mode)),
         ecpp_gate_sigmoid_endpoint_value=_float(gate_data, "sigmoid_endpoint_value", control.ecpp_gate_sigmoid_endpoint_value),
         ecpp_gate_error_on=_float(gate_data, "error_on", control.ecpp_gate_error_on),
@@ -231,7 +234,6 @@ def config_for_variant(
     zeta: float,
     gate_mode: str,
 ) -> EcppConfig:
-    preview_time = lookahead_m / config.v_max
     return replace(
         config,
         lookahead_m=lookahead_m,
@@ -240,7 +242,6 @@ def config_for_variant(
         ecpp_gate_mode=gate_mode,
         dpp_omega_n=omega_n,
         dpp_zeta=zeta,
-        dpp_preview_time=preview_time,
         dpp_gain_speed=config.v_max,
     )
 

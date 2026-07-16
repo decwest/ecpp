@@ -6,8 +6,13 @@ from dataclasses import dataclass
 import numpy as np
 
 from ..config import EcppConfig
-from ..geometry import calc_path_theta, normalize_angle
-from ..lookahead import calc_lookahead_position
+from ..lookahead import (
+    PathLocation,
+    PathProjection,
+    calc_path_frame_error,
+    calc_lookahead_location,
+    resolve_path_projection,
+)
 from .gates import gate_abs_by_mode
 from .pure_pursuit import calc_pp_curvature_to_point
 
@@ -35,28 +40,26 @@ class EcppTerms:
     dK_psi: float
     lookahead_distance: float
     v_gain: float
+    projection: PathProjection
+    lookahead_location: PathLocation
 
 
 def calc_ecpp_terms(
     current_pose: np.ndarray,
     current_velocity: np.ndarray,
-    current_idx: np.intp | int,
+    current_idx: PathProjection | PathLocation | np.intp | int,
     path: np.ndarray,
     path_distances: np.ndarray,
     lookahead_distance: float,
     config: EcppConfig,
 ) -> EcppTerms:
     eps = 1e-12
-    path_pos = path[int(current_idx), :2]
-    lookahead_pos, _ = calc_lookahead_position(current_idx, path, path_distances, lookahead_distance)
-    path_yaw = calc_path_theta(path, current_idx)
-
-    c = math.cos(path_yaw)
-    s = math.sin(path_yaw)
-    dx = float(current_pose[0] - path_pos[0])
-    dy = float(current_pose[1] - path_pos[1])
-    e_y = -s * dx + c * dy
-    e_psi = float(normalize_angle(current_pose[2] - path_yaw))
+    projection = resolve_path_projection(current_pose, current_idx, path, path_distances)
+    lookahead_location = calc_lookahead_location(
+        projection, path, path_distances, lookahead_distance
+    )
+    lookahead_pos = lookahead_location.position
+    e_y, e_psi = calc_path_frame_error(current_pose, projection)
 
     kappa_pp = calc_pp_curvature_to_point(current_pose, lookahead_pos)
     L_d = max(float(lookahead_distance), eps)
@@ -131,4 +134,6 @@ def calc_ecpp_terms(
         dK_psi=float(dK_psi),
         lookahead_distance=float(L_d),
         v_gain=float(v_gain),
+        projection=projection,
+        lookahead_location=lookahead_location,
     )

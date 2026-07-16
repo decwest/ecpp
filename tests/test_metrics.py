@@ -1,7 +1,7 @@
 import numpy as np
 import math
 
-from ecpp.config import experiment_config_from_mapping
+from ecpp.config import EcppConfig, experiment_config_from_mapping
 from ecpp.evaluation.metrics import (
     count_zero_crossings,
     first_corner_index,
@@ -11,6 +11,7 @@ from ecpp.evaluation.metrics import (
     rise_time_percent_y,
     settling_time_percent_y,
     signed_lateral_error_to_line,
+    summarize_result,
     summarize_corner_response,
 )
 from ecpp.evaluation.tables import (
@@ -92,12 +93,15 @@ def test_corner_response_metrics_use_lookahead_detection_and_post_corner_line():
             [1.0, 0.0],
         ]),
         curvatures=np.zeros(5),
-        omega_raw=np.zeros(5),
-        omega_cmd=np.zeros(5),
+        omega_raw=np.array([0.0, 2.0, -2.0, 0.0, 0.0]),
+        omega_cmd=np.array([0.0, 1.0, -1.0, 0.0, 0.0]),
         v_cmd=np.full(5, 0.5),
         sigma=np.full(5, np.nan),
         sigma_y=np.full(5, np.nan),
         sigma_psi=np.full(5, np.nan),
+        path_s=np.zeros(5),
+        e_y=np.zeros(5),
+        e_psi=np.zeros(5),
         goal_reached=True,
         max_steps_reached=False,
     )
@@ -107,6 +111,11 @@ def test_corner_response_metrics_use_lookahead_detection_and_post_corner_line():
     assert metrics["corner_detection_time_s"] == 2.0
     assert metrics["corner_initial_e_y_m"] == 0.2
     assert metrics["corner_max_overshoot_m"] == 0.05
+
+    summary = summarize_result(result, EcppConfig(omega_max=1.5))
+    assert summary["clip_ratio"] == 0.4
+    assert summary["mean_abs_omega_raw_rate_radps2"] == 2.0
+    assert summary["max_abs_omega_raw_rate_radps2"] == 4.0
 
 
 def test_signed_lateral_error_to_post_corner_line_y_zero():

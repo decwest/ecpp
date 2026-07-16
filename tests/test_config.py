@@ -1,10 +1,13 @@
 import math
 
+import pytest
+
 from ecpp.config import EcppConfig, config_for_variant, experiment_config_from_mapping
+from ecpp.controllers.dpp import calc_dpp_parameters
 from ecpp.simulation.runner import build_scenarios, nominal_variants
 
 
-def test_default_dpp_first_preview_distance_matches_lookahead_target():
+def test_dpp_previews_are_ld_and_twice_ld():
     config = EcppConfig(v_max=0.5)
     variant_config = config_for_variant(
         config,
@@ -14,7 +17,21 @@ def test_default_dpp_first_preview_distance_matches_lookahead_target():
         gate_mode="off",
     )
     assert math.isclose(variant_config.dpp_gain_speed, config.v_max)
-    assert math.isclose(variant_config.dpp_preview_time * variant_config.dpp_gain_speed, 1.2)
+    l1, l2, _, _, v_gain = calc_dpp_parameters(variant_config)
+    assert math.isclose(l1, 1.2)
+    assert math.isclose(l2, 2.4)
+    assert math.isclose(v_gain, 0.55)
+
+
+def test_simulation_angular_clip_is_fixed_at_one_point_five_radps():
+    with pytest.raises(ValueError, match="fixed at 1.5"):
+        EcppConfig(omega_max=0.5)
+
+
+def test_experiment_config_reads_additive_velocity_regularization():
+    experiment = experiment_config_from_mapping({"ecpp": {"v_epsilon": 0.05}})
+
+    assert math.isclose(experiment.control.ecpp_v_epsilon, 0.05)
 
 
 def test_experiment_config_accepts_single_lookahead_value():

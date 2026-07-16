@@ -5,7 +5,8 @@ tracking experiments. The repository targets fixed-speed evaluation:
 
 ```text
 v = v_max
-omega = clip(kappa * v_max, -omega_max, omega_max)
+omega_raw = kappa * v_max
+omega = clip(omega_raw, -1.5 rad/s, +1.5 rad/s)
 ```
 
 The implemented comparison methods are:
@@ -15,14 +16,15 @@ The implemented comparison methods are:
 - `ECPP without gate`
 - `ECPP`
 
-This repository is intentionally limited to curvature-law evaluation for the
-IEEE Access manuscript. Velocity scheduling, acceleration-window search, and
-non-differential platform controllers are outside this package.
+The simulator runs at 30 Hz. The clip is instantaneous and is used only for
+the simulated state update.
+Curvature, saturation, and command-rate metrics use the raw request. A Nav2
+velocity smoother and its acceleration dynamics are intentionally not modeled.
 
 ## Setup
 
 ```bash
-cd /home/decwest/decwest_workspace/ecpp
+cd /home/ytpc2022e/decwest_workspace/ecpp_ws/ecpp
 uv sync --dev
 ```
 
@@ -35,6 +37,18 @@ uv run python experiments/export_paper_assets.py
 ```
 
 Default outputs are written under `results/`.
+
+The IEEE Access artifact generators are also canonical package commands:
+
+```bash
+uv run ecpp-paper figure1 --out-root /path/to/fumiya_ieee_access
+uv run ecpp-paper ieee-access --out-root /path/to/fumiya_ieee_access
+```
+
+They write to `generated_preview/` by default; pass `--apply` to write the
+frozen experiment outputs below `generated/`. Scripts with the historical
+names under the paper project are thin compatibility wrappers around these
+commands; controller and simulation implementations live only in this repo.
 
 ## Development Checks
 
