@@ -195,23 +195,45 @@ def test_frozen_paper_experiment_conditions_are_exact():
     assert ieee_access.SPEED_PP_OMEGA_N == pytest.approx(
         np.sqrt(2.0) * 0.55
     )
-    assert ieee_access.SPEED_LAMBDAS[:3] == pytest.approx((0.75, 1.0, 1.25))
-    assert ieee_access.SPEED_LAMBDAS[-1] == pytest.approx(
-        ieee_access.SPEED_OMEGA_N_MAX / ieee_access.SPEED_PP_OMEGA_N
-    )
     assert ieee_access.DAMPING_LD == pytest.approx(0.5)
-    assert ieee_access.DAMPING_COND == pytest.approx(
-        (0.15, np.deg2rad(-30.0))
-    )
     assert ieee_access.DAMPING_OMEGA_N == pytest.approx(
         np.sqrt(2.0) * 0.55 / 0.5
     )
-    assert ieee_access.DAMPING_ZETAS == pytest.approx(
+    # Frozen hardware experiment-1 arms (redesigned 2026-07-16, L_d=1.0).
+    local_arms = ieee_access._hw_local_arms()
+    far_arms = ieee_access._hw_far_arms()
+    assert [arm["key"] for arm in local_arms] == [
+        "PP",
+        "ECPP_w0778_z0707", "ECPP_w0778_z1000", "ECPP_w0778_z1414",
+        "ECPP_w1133_z0707", "ECPP_w1133_z1000", "ECPP_w1133_z1414",
+    ]
+    assert [arm["key"] for arm in far_arms] == [
+        "PP", "ECPP_w1133_z0707", "ECPP_w1133_z1000", "ECPP_w1133_z1414",
+    ]
+    assert local_arms[1]["omega_n"] == pytest.approx(
+        ieee_access.SPEED_PP_OMEGA_N
+    )
+    assert local_arms[4]["omega_n"] == pytest.approx(
+        ieee_access.SPEED_OMEGA_N_MAX
+    )
+    assert far_arms[1]["omega_n"] == pytest.approx(
+        ieee_access.SPEED_OMEGA_N_MAX
+    )
+    assert ieee_access.GRID_LDS == pytest.approx((1.0, 0.5))
+    assert ieee_access.GRID_COND == pytest.approx((0.15, 0.0))
+    assert ieee_access.GRID_ZETAS == pytest.approx(
         (1.0 / np.sqrt(2.0), 1.0, np.sqrt(2.0))
     )
+    assert ieee_access.GRID_OMEGAS == pytest.approx((
+        ieee_access.SPEED_PP_OMEGA_N,
+        ieee_access.SPEED_OMEGA_N_MAX,
+        ieee_access.DAMPING_OMEGA_N,
+    ))
     assert [(ey, round(np.rad2deg(epsi)))
             for ey, epsi in ieee_access.TEST2_CONDS] == [
-        (0.15, 0), (0.15, -30), (1.0, 0), (1.0, -90)
+        (0.0, -30), (0.0, -90),
+        (0.15, 0), (0.15, -30), (0.15, -90),
+        (1.0, 0), (1.0, -30), (1.0, -90),
     ]
 
 
@@ -226,10 +248,10 @@ def test_figure1_reuses_preregistered_chapter5_arms_without_gain_search():
     assert speed["omega_n"] == pytest.approx(ieee_access.SPEED_OMEGA_N_MAX)
     assert speed["zeta"] == pytest.approx(ieee_access.SPEED_ZETA)
     assert damping["key"] == "damping"
-    assert damping["lookahead"] == pytest.approx(ieee_access.DAMPING_LD)
-    assert damping["ey0"] == pytest.approx(ieee_access.DAMPING_COND[0])
-    assert damping["eth0"] == pytest.approx(ieee_access.DAMPING_COND[1])
-    assert damping["omega_n"] == pytest.approx(ieee_access.DAMPING_OMEGA_N)
+    assert damping["lookahead"] == pytest.approx(ieee_access.SPEED_LD)
+    assert damping["ey0"] == pytest.approx(ieee_access.SPEED_COND[0])
+    assert damping["eth0"] == pytest.approx(ieee_access.SPEED_COND[1])
+    assert damping["omega_n"] == pytest.approx(ieee_access.SPEED_OMEGA_N_MAX)
     assert damping["zeta"] == pytest.approx(1.0)
 
 

@@ -8,10 +8,14 @@ Engine (frozen experiment values)
 * Pure-python unicycle, 30 Hz exact constant-twist update, no LPF (tau = 0).
 * v0 = 0.5 m/s and the instantaneous state-update clip is fixed at
   +/-1.5 rad/s.  There is no acceleration or velocity-smoother model.
-* Test 1a fixes L_d=1.0 m and sweeps configured omega_n relative to the exact
-  PP-equivalent value.  Test 1b fixes L_d=0.5 m and sweeps zeta about the exact
-  PP-equivalent gains.  Test 2 uses L_d=0.5 m, zeta=1, and the configured
-  PP-equivalent omega_n.
+* Test 1 runs the full frozen grid: configured omega_n in {0.777817,
+  1.132872, 1.555635} rad/s x zeta in {1/sqrt2, 1, sqrt2} x L_d in
+  {1.0, 0.5} m at the single fixed initial condition (0.15 m, 0 deg).
+  Every omega_n on the axis is a named quantity (PP-equivalent at L_d=1.0,
+  the rate-bound design limit at L_d=1.0, PP-equivalent at L_d=0.5).
+* Test 2 uses the grid cell selected by the pre-declared rule (in-bound,
+  minimal T_s^2%): L_d=0.5 m, zeta=1, the configured PP-equivalent omega_n.
+  Its initial conditions are the full one-sided 3x3 grid minus the origin.
 * Controllers: PP, DPP, ECPP w/o gate (sigma == 1), ECPP (gated).
 * ECPP law  kappa_des = kappa_PP - sigma(e_y) * (dK_y e_y + dK_theta sin e_theta)
       dK_y     = K_y - 2/L_d^2 ,  K_y     = (omega_n / (|v|+0.05))^2
@@ -871,7 +875,9 @@ def run_legacy_test1_preview(table_dir, fig_dir):
 
 
 # ---------------------------------------------------------------------------
-# Frozen TEST 1 design: separate speed and damping studies
+# Frozen chapter-6 hardware-experiment-1 arm definitions.  These constants
+# drive run_hw_reference() (the sim reference traces for the hardware arms)
+# and also name the omega_n axis of the test-1 grid below.
 # ---------------------------------------------------------------------------
 SPEED_LD = 1.0
 SPEED_COND = (0.30, 0.0)
@@ -879,213 +885,348 @@ SPEED_ZETA = 1.0 / math.sqrt(2.0)
 SPEED_PP_OMEGA_N = math.sqrt(2.0) * (V0 + V_EPSILON) / SPEED_LD
 SPEED_EBAR_G = math.sqrt(EPS_OFF) * SPEED_LD
 SPEED_OMEGA_N_MAX = omega_n_max(SPEED_ZETA, SPEED_EBAR_G, sbar=0.0)
-SPEED_LAMBDAS = (
-    0.75,
-    1.00,
-    1.25,
-    SPEED_OMEGA_N_MAX / SPEED_PP_OMEGA_N,
-)
 
 DAMPING_LD = 0.5
-DAMPING_COND = (0.15, math.radians(-30.0))
 DAMPING_OMEGA_N = math.sqrt(2.0) * (V0 + V_EPSILON) / DAMPING_LD
-DAMPING_ZETAS = (1.0 / math.sqrt(2.0), 1.0, math.sqrt(2.0))
+
+# ---------------------------------------------------------------------------
+# Frozen TEST 1 design: full (omega_n, zeta, L_d) grid at one fixed initial
+# condition.  Every omega_n column is a named quantity, not a tuned value:
+#   0.777817 rad/s = PP-equivalent configured omega_n at L_d = 1.0 m
+#   1.132872 rad/s = rate-bound design limit omega_n_max at L_d = 1.0 m
+#   1.555635 rad/s = PP-equivalent configured omega_n at L_d = 0.5 m
+# The fixed initial condition keeps the gate fully on for BOTH lookaheads
+# ((0.15/0.5)^2 = 0.09 < eps_on = 0.10), so every cell starts in the linear
+# pole-placement regime; saturation phenomenology is exercised by the far
+# test-2 conditions instead.
+# ---------------------------------------------------------------------------
+GRID_LDS = (1.0, 0.5)
+GRID_COND = (0.15, 0.0)
+GRID_ZETAS = (1.0 / math.sqrt(2.0), 1.0, math.sqrt(2.0))
+GRID_OMEGAS = (SPEED_PP_OMEGA_N, SPEED_OMEGA_N_MAX, DAMPING_OMEGA_N)
+GRID_OMEGA_NAMES = (
+    "pp_equivalent_ld_1p0",
+    "omega_n_max_ld_1p0",
+    "pp_equivalent_ld_0p5",
+)
 
 
-def _speed_arms():
+_HW_ZETAS = (
+    (1.0 / math.sqrt(2.0), "z0707", r"\zeta=1/\sqrt{2}"),
+    (1.0, "z1000", r"\zeta=1"),
+    (math.sqrt(2.0), "z1414", r"\zeta=\sqrt{2}"),
+)
+
+
+def _hw_local_arms():
+    """Hardware experiment-1 local group: PP + {0.778, 1.133} x zeta grid."""
+
     arms = [{
         "key": "PP",
         "label": "PP",
         "method": "PP",
         "omega_n": SPEED_PP_OMEGA_N,
-        "zeta": SPEED_ZETA,
-        "lambda": 1.0,
+        "zeta": 1.0 / math.sqrt(2.0),
     }]
-    for index, lam in enumerate(SPEED_LAMBDAS):
-        suffix = "max" if index == len(SPEED_LAMBDAS) - 1 else f"{lam:.2f}"
-        arms.append({
-            "key": f"ECPP_lambda_{suffix}",
-            "label": (
-                r"ECPP ($\lambda=\lambda_{\max}$)"
-                if suffix == "max"
-                else fr"ECPP ($\lambda={lam:.2f}$)"
-            ),
-            "method": "ECPP",
-            "omega_n": lam * SPEED_PP_OMEGA_N,
-            "zeta": SPEED_ZETA,
-            "lambda": lam,
-        })
+    for omega_n, wtag, wmath in (
+        (SPEED_PP_OMEGA_N, "w0778", r"\omega_n=0.778"),
+        (SPEED_OMEGA_N_MAX, "w1133", r"\omega_n=1.133"),
+    ):
+        for zeta, ztag, zmath in _HW_ZETAS:
+            arms.append({
+                "key": f"ECPP_{wtag}_{ztag}",
+                "label": fr"ECPP (${wmath}$, ${zmath}$)",
+                "method": "ECPP",
+                "omega_n": omega_n,
+                "zeta": zeta,
+            })
     return arms
 
 
-def _damping_arms():
+def _hw_far_arms():
+    """Hardware experiment-1 far group: PP + zeta sweep at omega_n_max."""
+
     arms = [{
         "key": "PP",
         "label": "PP",
         "method": "PP",
-        "omega_n": DAMPING_OMEGA_N,
+        "omega_n": SPEED_PP_OMEGA_N,
         "zeta": 1.0 / math.sqrt(2.0),
     }]
-    for zeta, suffix in zip(DAMPING_ZETAS, ("inv_sqrt2", "1", "sqrt2")):
+    for zeta, ztag, zmath in _HW_ZETAS:
         arms.append({
-            "key": f"ECPP_zeta_{suffix}",
-            "label": (
-                r"ECPP ($\zeta=1/\sqrt{2}$)" if suffix == "inv_sqrt2"
-                else r"ECPP ($\zeta=\sqrt{2}$)" if suffix == "sqrt2"
-                else r"ECPP ($\zeta=1$)"
-            ),
+            "key": f"ECPP_w1133_{ztag}",
+            "label": fr"ECPP (${zmath}$)",
             "method": "ECPP",
-            "omega_n": DAMPING_OMEGA_N,
+            "omega_n": SPEED_OMEGA_N_MAX,
             "zeta": zeta,
         })
     return arms
 
 
-def _run_test1_family(ld, condition, arms, trace_dir, family):
+def _ld_tag(ld):
+    return f"ld{round(ld * 100):03d}"
+
+
+def _omega_tag(omega_n):
+    return f"w{round(omega_n * 1000):04d}"
+
+
+def _zeta_tag(zeta):
+    return f"z{round(zeta * 1000):04d}"
+
+
+def _zeta_math(zeta):
+    if math.isclose(zeta, 1.0 / math.sqrt(2.0), abs_tol=1e-9):
+        return r"1/\sqrt{2}"
+    if math.isclose(zeta, math.sqrt(2.0), abs_tol=1e-9):
+        return r"\sqrt{2}"
+    return f"{zeta:g}"
+
+
+def _run_test1_grid_block(ld, trace_dir):
+    """Simulate the 3x3 (omega_n, zeta) block of the test-1 grid at one L_d."""
+
     configure(ld=ld)
     path = StraightPath()
-    results = []
+    ey0, eth0 = GRID_COND
+    pp_cfg = PP_OMEGA_N
+    bound = OMEGA_N_MAX
+    pp_arr, _ = simulate(
+        path, "PP", pp_cfg, 1.0 / math.sqrt(2.0), ey0, eth0
+    )
+    rows = []
     traces = {}
-    trace_dir.mkdir(parents=True, exist_ok=True)
-    for arm in arms:
-        metric, arr, _ = run_metrics(
-            path,
-            arm["method"],
-            arm["omega_n"],
-            arm["zeta"],
-            condition[0],
-            condition[1],
-        )
-        row = dict(arm)
-        row.update(metric)
-        analytic = second_order_response_with_initial_rate(
-            arr[:, 0],
-            condition[0],
-            V0 * math.sin(condition[1]),
-            arm["omega_n"],
-            arm["zeta"],
-        )
-        row["analytic_rmse_e_y"] = float(
-            np.sqrt(np.mean(np.square(arr[:, 5] - analytic)))
-        )
-        results.append(row)
-        traces[arm["key"]] = arr
-        np.savetxt(
-            trace_dir / f"sim_test1_{family}_{arm['key']}.csv",
-            arr,
-            delimiter=",",
-            header=(
-                "t,x,y,psi,path_s,e_y,e_psi,kappa,omega_cmd,omega_raw,sigma"
-            ),
-            comments="",
-            fmt="%.9g",
-        )
-    return results, traces
+    control_dev = None
+    for omega_n, omega_name in zip(GRID_OMEGAS, GRID_OMEGA_NAMES):
+        for zeta in GRID_ZETAS:
+            metric, arr, _ = run_metrics(
+                path, "ECPP", omega_n, zeta, ey0, eth0
+            )
+            key = f"{_ld_tag(ld)}_{_omega_tag(omega_n)}_{_zeta_tag(zeta)}"
+            row = dict(metric)
+            row["key"] = key
+            row["ld"] = ld
+            row["omega_name"] = omega_name
+            row["lambda"] = omega_n / pp_cfg
+            analytic = second_order_response_with_initial_rate(
+                arr[:, 0],
+                ey0,
+                V0 * math.sin(eth0),
+                omega_n,
+                zeta,
+            )
+            row["analytic_rmse_e_y"] = float(
+                np.sqrt(np.mean(np.square(arr[:, 5] - analytic)))
+            )
+            row["in_bound"] = bool(omega_n <= bound + 1e-9)
+            row["pp_equivalent"] = bool(
+                math.isclose(omega_n, pp_cfg, rel_tol=0.0, abs_tol=1e-9)
+                and math.isclose(
+                    zeta, 1.0 / math.sqrt(2.0), rel_tol=0.0, abs_tol=1e-9
+                )
+            )
+            if row["pp_equivalent"]:
+                steps = min(len(arr), len(pp_arr))
+                control_dev = float(
+                    np.max(np.abs(arr[:steps, 1:4] - pp_arr[:steps, 1:4]))
+                )
+                if len(arr) != len(pp_arr) or control_dev > 1e-9:
+                    raise RuntimeError(
+                        "negative control failed: the PP-equivalent ECPP "
+                        f"cell {key} deviates from PP by {control_dev:.3e}"
+                    )
+            rows.append(row)
+            traces[key] = arr
+            np.savetxt(
+                trace_dir / f"sim_test1_grid_{key}.csv",
+                arr,
+                delimiter=",",
+                header=(
+                    "t,x,y,psi,path_s,e_y,e_psi,kappa,omega_cmd,"
+                    "omega_raw,sigma"
+                ),
+                comments="",
+                fmt="%.9g",
+            )
+    block = {
+        "lookahead_m": ld,
+        "omega_n_pp_configured": pp_cfg,
+        "omega_n_max": bound,
+        "lambda_max": bound / pp_cfg,
+        "pp_negative_control_max_dev": control_dev,
+        "rows": rows,
+    }
+    return block, traces
 
 
-def _write_test1_family_table(path_out, rows, varied):
+def _write_test1_grid_table(path_out, blocks):
+    """One table with an L_d block per lookahead; unified metric columns."""
+
     lines = [
-        r"\begin{tabular}{@{}lrrrrrrrr@{}}",
+        r"\begin{tabular}{@{}rlrrrrrrr@{}}",
         r"\toprule",
         (
-            r"Method & $\lambda$ & $\omega_n$ & $T_s^{10\%}$ & "
-            r"$T_s^{5\%}$ & $T_s^{2\%}$ & $M_{\rm os}$ & IAE & "
-            r"$|\omega_{\rm raw}|_{\max}$ \\"
-            if varied == "lambda"
-            else
-            r"Method & $\zeta$ & $\omega_n$ & $T_s^{10\%}$ & "
-            r"$T_s^{5\%}$ & $T_s^{2\%}$ & $M_{\rm os}$ & IAE & "
-            r"$|\omega_{\rm raw}|_{\max}$ \\"
+            r"$\omega_n$ [rad/s] & $\zeta$ & $\lambda$ & $\bar e_y$ [m] & "
+            r"$\bar e_\theta$ [$^\circ$] & $T_r$ [s] & $T_s^{2\%}$ [s] & "
+            r"$M_{\rm os}$ [m] & $\kappa_{\max}$ [1/m] \\"
         ),
         r"\midrule",
     ]
-    for row in rows:
-        varied_value = row.get("lambda") if varied == "lambda" else row["zeta"]
-        lines.append(" & ".join([
-            row["label"],
-            f(varied_value, 3),
-            f(row["omega_n"], 3),
-            f(row.get("T_s_10"), 3),
-            f(row.get("T_s_05"), 3),
-            f(row.get("T_s_02"), 3),
-            f(row.get("M_os"), 4),
-            f(row.get("iae_e_y"), 4),
-            f(row.get("omega_raw_max"), 3),
-        ]) + r"\\")
+    first_block = True
+    for ld in GRID_LDS:
+        block = blocks[ld]
+        if not first_block:
+            lines.append(r"\midrule")
+        first_block = False
+        lines.append(
+            r"\multicolumn{9}{@{}l}{$L_d=" + f"{ld:.1f}"
+            + r"\,\mathrm{m}$:\ $\omega_{n,{\rm PP}}^{\rm cfg}="
+            + f"{block['omega_n_pp_configured']:.3f}"
+            + r"$, $\omega_{n,\max}=" + f"{block['omega_n_max']:.3f}"
+            + r"\,\mathrm{rad/s}$} \\"
+        )
+        previous_omega = None
+        for row in block["rows"]:
+            if previous_omega is not None and row["omega_n"] != previous_omega:
+                lines.append(r"\addlinespace[1pt]")
+            previous_omega = row["omega_n"]
+            omega_cell = f"{row['omega_n']:.3f}"
+            if not row["in_bound"]:
+                omega_cell += r"$^{\dagger}$"
+            zeta_cell = "$" + _zeta_math(row["zeta"]) + "$"
+            if row["pp_equivalent"]:
+                zeta_cell += r" (=PP)"
+            lines.append(" & ".join([
+                omega_cell,
+                zeta_cell,
+                f(row["lambda"], 2),
+                f(row.get("bar_e_y"), 3),
+                f(row.get("bar_e_theta_deg"), 2),
+                f(row.get("T_r"), 2),
+                f(row.get("T_s_02"), 2),
+                f(row.get("M_os"), 4),
+                f(row.get("kappa_max"), 2),
+            ]) + r"\\")
     lines += [r"\bottomrule", r"\end{tabular}", ""]
     path_out.write_text("\n".join(lines), encoding="utf-8")
 
 
-def _fig_test1_family(fig_dir, family, rows, traces, title):
+def _fig_test1_grid(fig_dir, blocks, traces):
+    """2x3 panel figure: rows = L_d, columns = zeta, curves = omega_n."""
+
     plt.rcParams.update({"font.size": 8})
-    fig, axes = plt.subplots(2, 1, figsize=(3.5, 4.2), sharex=True)
-    colors = plt.get_cmap("viridis")(np.linspace(0.1, 0.9, len(rows)))
-    for row, color in zip(rows, colors):
-        arr = traces[row["key"]]
-        linestyle = "--" if row["method"] == "PP" else "-"
-        axes[0].plot(arr[:, 0], arr[:, 5], color=color, ls=linestyle,
-                     lw=1.1, label=row["label"])
-        analytic = second_order_response_with_initial_rate(
-            arr[:, 0],
-            arr[0, 5],
-            V0 * math.sin(arr[0, 6]),
-            row["omega_n"],
-            row["zeta"],
-        )
-        axes[0].plot(
-            arr[:, 0], analytic, color=color, ls=":", lw=0.7, alpha=0.7
-        )
-        axes[1].plot(arr[:, 0], arr[:, 9], color=color, ls=linestyle,
-                     lw=1.0, label=row["label"])
-    axes[0].axhline(0.0, color="0.65", lw=0.6)
-    axes[0].set_ylabel(r"$e_y$ [m]")
-    axes[0].set_title(title, fontsize=8)
-    axes[0].plot([], [], color="0.35", ls=":", lw=0.8,
-                 label="linear model")
-    axes[0].legend(fontsize=5.3, ncol=2, framealpha=0.85)
-    axes[1].axhline(OMEGA_MAX, color="0.5", lw=0.7, ls=":")
-    axes[1].axhline(-OMEGA_MAX, color="0.5", lw=0.7, ls=":")
-    axes[1].set_ylabel(r"$\omega_{\rm raw}$ [rad/s]")
-    axes[1].set_xlabel(r"$t$ [s]")
-    for ax in axes:
-        ax.grid(True, color="0.9", lw=0.5)
-        ax.tick_params(labelsize=7)
+    fig, axes = plt.subplots(
+        2, 3, figsize=(7.1, 4.2), sharex=True, sharey="row"
+    )
+    colors = plt.get_cmap("viridis")(
+        np.linspace(0.15, 0.85, len(GRID_OMEGAS))
+    )
+    for i, ld in enumerate(GRID_LDS):
+        rows_by_cell = {
+            (round(r["omega_n"], 6), round(r["zeta"], 6)): r
+            for r in blocks[ld]["rows"]
+        }
+        for j, zeta in enumerate(GRID_ZETAS):
+            ax = axes[i][j]
+            for omega_n, color in zip(GRID_OMEGAS, colors):
+                row = rows_by_cell[(round(omega_n, 6), round(zeta, 6))]
+                arr = traces[row["key"]]
+                label = f"$\\omega_n={omega_n:.3f}$"
+                if row["pp_equivalent"]:
+                    label += " (=PP)"
+                elif not row["in_bound"]:
+                    label += r"$^{\dagger}$"
+                linestyle = "--" if row["pp_equivalent"] else "-"
+                ax.plot(arr[:, 0], arr[:, 5], color=color, ls=linestyle,
+                        lw=1.1, label=label)
+                analytic = second_order_response_with_initial_rate(
+                    arr[:, 0],
+                    arr[0, 5],
+                    V0 * math.sin(arr[0, 6]),
+                    omega_n,
+                    zeta,
+                )
+                ax.plot(arr[:, 0], analytic, color=color, ls=":", lw=0.6,
+                        alpha=0.7)
+            ax.axhline(0.0, color="0.65", lw=0.6)
+            ax.grid(True, color="0.9", lw=0.5)
+            ax.tick_params(labelsize=7)
+            ax.set_title(
+                f"$L_d={ld:.1f}$ m, $\\zeta={_zeta_math(zeta)}$", fontsize=8
+            )
+            if i == len(GRID_LDS) - 1:
+                ax.set_xlabel(r"$t$ [s]")
+            if j == 0:
+                ax.set_ylabel(r"$e_y$ [m]")
+                handles, labels = ax.get_legend_handles_labels()
+                ax.plot([], [], color="0.35", ls=":", lw=0.8,
+                        label="linear model")
+                ax.legend(fontsize=5.2, framealpha=0.85)
     fig.tight_layout(pad=0.4)
     for ext in ("pdf", "png"):
-        fig.savefig(fig_dir / f"sim_test1_{family}_response.{ext}", dpi=300)
+        fig.savefig(fig_dir / f"sim_test1_grid_response.{ext}", dpi=300)
     plt.close(fig)
 
 
+def _select_grid_cell(blocks):
+    """Pre-declared lexicographic selection over the in-bound cells.
+
+    Minimize T_s^2% first; break ties by the maximum overshoot M_os (at
+    equal settling, prefer the cell that does not cross the path), then by
+    IAE.  At the fixed grid condition the PP-equivalent and the critically
+    damped cell settle in exactly the same number of control periods, so the
+    overshoot key is what separates them.
+    """
+
+    candidates = []
+    for ld in GRID_LDS:
+        for row in blocks[ld]["rows"]:
+            if not row["in_bound"] or row.get("T_s_02") is None:
+                continue
+            candidates.append(row)
+    if not candidates:
+        raise RuntimeError(
+            "test-1 grid selection found no settled in-bound cell"
+        )
+    ranked = sorted(
+        candidates,
+        key=lambda row: (row["T_s_02"], row["M_os"], row["iae_e_y"]),
+    )
+    best = ranked[0]
+    selected = {
+        "key": best["key"],
+        "ld": best["ld"],
+        "omega_n": best["omega_n"],
+        "zeta": best["zeta"],
+        "lambda": best["lambda"],
+        "T_s_02": best["T_s_02"],
+        "M_os": best["M_os"],
+        "iae_e_y": best["iae_e_y"],
+    }
+    if len(ranked) > 1:
+        selected["runner_up"] = {
+            key: ranked[1][key]
+            for key in ("key", "T_s_02", "M_os", "iae_e_y")
+        }
+    return selected
+
+
 def run_test1(table_dir, fig_dir, trace_dir=None):
-    """Run the preregistered speed and damping parameter studies."""
+    """Run the frozen full-grid (omega_n, zeta, L_d) parameter study."""
 
     trace_dir = table_dir.parent / "traces" if trace_dir is None else trace_dir
-    speed_rows, speed_traces = _run_test1_family(
-        SPEED_LD, SPEED_COND, _speed_arms(), trace_dir, "speed"
-    )
-    damping_rows, damping_traces = _run_test1_family(
-        DAMPING_LD, DAMPING_COND, _damping_arms(), trace_dir, "damping"
-    )
-    _write_test1_family_table(
-        table_dir / "sim_test1_speed_results.tex", speed_rows, "lambda"
-    )
-    _write_test1_family_table(
-        table_dir / "sim_test1_damping_results.tex", damping_rows, "zeta"
-    )
-    _fig_test1_family(
-        fig_dir,
-        "speed",
-        speed_rows,
-        speed_traces,
-        r"(a) Speed shaping: $L_d=1.0$ m, $e_y(0)=0.30$ m",
-    )
-    _fig_test1_family(
-        fig_dir,
-        "damping",
-        damping_rows,
-        damping_traces,
-        r"(b) Damping shaping: $L_d=0.5$ m, $e_\psi(0)=-30^\circ$",
-    )
+    trace_dir.mkdir(parents=True, exist_ok=True)
+    blocks = {}
+    traces = {}
+    for ld in GRID_LDS:
+        block, block_traces = _run_test1_grid_block(ld, trace_dir)
+        blocks[ld] = block
+        traces.update(block_traces)
+
+    _write_test1_grid_table(table_dir / "sim_test1_grid_results.tex", blocks)
+    _fig_test1_grid(fig_dir, blocks, traces)
+    selected = _select_grid_cell(blocks)
 
     out = {
         "meta": {
@@ -1097,36 +1238,29 @@ def run_test1(table_dir, fig_dir, trace_dir=None):
             "acceleration_model": None,
             "clip_semantics": "instantaneous_state_update_only",
             "carrot_rule": "continuous_arc_length",
-            "normalized_initial_error": 0.30,
-            "normalized_initial_error_rule": (
-                "largest 0.1-grid value inside sqrt(eps_on)=0.316..."
+            "design": "full_grid_single_initial_condition",
+            "initial_condition": [GRID_COND[0], math.degrees(GRID_COND[1])],
+            "initial_condition_rule": (
+                "fixed absolute (e_y, e_theta); e_y=0.15 m keeps the gate "
+                "fully on for both lookaheads ((0.15/0.5)^2 = 0.09 < "
+                "eps_on = 0.10)"
             ),
-        },
-        "speed": {
-            "lookahead_m": SPEED_LD,
-            "initial_condition": [SPEED_COND[0], math.degrees(SPEED_COND[1])],
-            "zeta": SPEED_ZETA,
-            "omega_n_pp_configured": SPEED_PP_OMEGA_N,
-            "omega_n_max": SPEED_OMEGA_N_MAX,
-            "lambdas": list(SPEED_LAMBDAS),
+            "omega_axis": {
+                name: omega
+                for name, omega in zip(GRID_OMEGA_NAMES, GRID_OMEGAS)
+            },
+            "zetas": list(GRID_ZETAS),
+            "lookaheads_m": list(GRID_LDS),
+            "cell_count": (
+                len(GRID_LDS) * len(GRID_OMEGAS) * len(GRID_ZETAS)
+            ),
             "selection_rule": (
-                "lambda={0.75,1.00,1.25,lambda_max}; lambda_max follows "
-                "from the configured-omega rate bound at the gate envelope"
+                "among in-bound cells (omega_n <= omega_n_max(L_d)), "
+                "minimize T_s^2%; ties broken by M_os, then IAE"
             ),
-            "rows": speed_rows,
         },
-        "damping": {
-            "lookahead_m": DAMPING_LD,
-            "initial_condition": [
-                DAMPING_COND[0], math.degrees(DAMPING_COND[1])
-            ],
-            "omega_n": DAMPING_OMEGA_N,
-            "zetas": list(DAMPING_ZETAS),
-            "selection_rule": (
-                "zeta={1/sqrt(2),1,sqrt(2)} about critical damping"
-            ),
-            "rows": damping_rows,
-        },
+        "blocks": {_ld_tag(ld): blocks[ld] for ld in GRID_LDS},
+        "selected": selected,
     }
     (table_dir / "sim_test1_metrics.json").write_text(
         json.dumps(_clean(out), indent=2), encoding="utf-8"
@@ -1138,11 +1272,17 @@ def run_test1(table_dir, fig_dir, trace_dir=None):
 # TEST 2 : method comparison on straight and smooth R=3 m arc
 # ---------------------------------------------------------------------------
 TEST2_METHODS = ["PP", "DPP", "ECPP w/o gate", "ECPP"]
+# Full one-sided 3x3 initial-condition grid minus the trivial origin.
+# Mirror-symmetric positive headings are omitted; e_y = 0 rows exercise the
+# pure-heading response, where the e_y-driven gate starts fully open and the
+# initial-error-normalized transient metrics (T_r, T_s, M_os) are undefined.
+TEST2_EY0S = (0.0, 0.15, 1.0)
+TEST2_ETH0_DEGS = (0.0, -30.0, -90.0)
 TEST2_CONDS = [
-    (0.15, math.radians(0.0)),
-    (0.15, math.radians(-30.0)),
-    (1.0, math.radians(0.0)),
-    (1.0, math.radians(-90.0)),
+    (ey0, math.radians(deg))
+    for ey0 in TEST2_EY0S
+    for deg in TEST2_ETH0_DEGS
+    if not (ey0 == 0.0 and deg == 0.0)
 ]
 REP_CONDS = TEST2_CONDS
 METHOD_COLORS = {"PP": "#d62728", "DPP": "#1f77b4",
@@ -1152,11 +1292,11 @@ METHOD_COLORS = {"PP": "#d62728", "DPP": "#1f77b4",
 def write_test2_table(path_out, results):
     """Write the compact method-comparison table for one path."""
     lines = [
-        r"\begin{tabular}{@{}lrrrrrrrrr@{}}",
+        r"\begin{tabular}{@{}lcrrrrrrr@{}}",
         r"\toprule",
-        r"Method & Eval. & $\bar e_y$ & $\bar e_\theta$ & $T_s$ & "
-        r"$M_{\rm os}$ & $T_{\rm eval}$ & $\kappa_{\max}$ & "
-        r"$|\omega_{\rm raw}|_{\max}$ & sat. [\%] \\",
+        r"Method & Eval. & $\bar e_y$ [m] & $\bar e_\theta$ [$^\circ$] & "
+        r"$T_m$ [s] & $T_r$ [s] & $T_s^{2\%}$ [s] & $M_{\rm os}$ [m] & "
+        r"$\kappa_{\max}$ [1/m] \\",
         r"\midrule",
     ]
     first = True
@@ -1166,7 +1306,7 @@ def write_test2_table(path_out, results):
         first = False
         deg = round(math.degrees(eth0))
         lines.append(
-            r"\multicolumn{10}{@{}l}{$e_y(0)=" + f"{ey0:.2f}" +
+            r"\multicolumn{9}{@{}l}{$e_y(0)=" + f"{ey0:.2f}" +
             r"\,\mathrm{m},\ e_\theta(0)=" + f"{deg}" + r"^\circ$} \\")
         for method in TEST2_METHODS:
             m = results[(method, ey0, deg)]
@@ -1175,12 +1315,11 @@ def write_test2_table(path_out, results):
                 "yes" if m.get("evaluation_completed") else "no",
                 f(m["bar_e_y"], 3),
                 f(m["bar_e_theta_deg"], 2),
+                f(m.get("T_m"), 2),
+                f(m.get("T_r"), 2),
                 f(m.get("T_s"), 2),
                 f(m.get("M_os"), 3),
-                f(m.get("T_eval"), 2),
                 f(m["kappa_max"], 2),
-                f(m["omega_raw_max"], 2),
-                f(100.0 * m["sat_ratio"], 1),
             ]) + r"\\")
     lines += [r"\bottomrule", r"\end{tabular}", ""]
     path_out.write_text("\n".join(lines), encoding="utf-8")
@@ -1330,16 +1469,9 @@ def run_hw_reference(table_dir, trace_root):
     }, "suites": {}}
     out["meta"]["carrot_rule"] = "continuous_arc_length"
 
-    far_arms = [
-        {"key": "PP", "label": "PP", "method": "PP",
-         "omega_n": DAMPING_OMEGA_N, "zeta": 1.0 / math.sqrt(2.0)},
-        {"key": "ECPP_representative", "label": "ECPP",
-         "method": "ECPP", "omega_n": DAMPING_OMEGA_N, "zeta": 1.0},
-    ]
     suites = {
-        "speed": (SPEED_LD, SPEED_COND, _speed_arms()),
-        "damping": (DAMPING_LD, DAMPING_COND, _damping_arms()),
-        "far_capture": (DAMPING_LD, (1.0, math.radians(-90.0)), far_arms),
+        "local": (SPEED_LD, SPEED_COND, _hw_local_arms()),
+        "far_capture": (SPEED_LD, (1.0, math.radians(-90.0)), _hw_far_arms()),
     }
     run_count = 0
     for suite_key, (ld, condition, arms) in suites.items():
@@ -1490,26 +1622,42 @@ def main(
     print(f"Out root: {args.out_root / sub}  (apply={args.apply})")
     print(f"Config: omega_max = {OMEGA_MAX} rad/s, "
           f"control_rate = {1.0 / DT:.1f} Hz, "
-          f"test-1 lookaheads = ({SPEED_LD}, {DAMPING_LD}) m, "
+          f"test-1 grid lookaheads = {GRID_LDS} m, "
           f"carrot_rule = {CARROT_RULE}")
 
     test1 = run_test1(table_dir, fig_dir)
-    speed = test1["speed"]
-    damping = test1["damping"]
-    print("\n*** TEST 1 frozen design ***")
-    print(f"speed: Ld={speed['lookahead_m']:.2f}, "
-          f"omega_pp={speed['omega_n_pp_configured']:.6f}, "
-          f"omega_max_design={speed['omega_n_max']:.6f}")
-    print(f"damping: Ld={damping['lookahead_m']:.2f}, "
-          f"omega_n={damping['omega_n']:.6f}, "
-          f"zetas={damping['zetas']}")
+    selected = test1["selected"]
+    print("\n*** TEST 1 frozen grid ***")
+    for ld in GRID_LDS:
+        block = test1["blocks"][_ld_tag(ld)]
+        print(f"Ld={ld:.1f}: omega_pp={block['omega_n_pp_configured']:.6f}, "
+              f"omega_n_max={block['omega_n_max']:.6f}, "
+              f"negative_control_dev="
+              f"{block['pp_negative_control_max_dev']:.2e}")
+    print(f"selected: Ld={selected['ld']:.2f}, "
+          f"omega_n={selected['omega_n']:.6f}, "
+          f"zeta={selected['zeta']:.6f} "
+          f"(T_s2%={selected['T_s_02']:.3f} s)")
+
+    # The chapter-6 hardware arms and the test-2 operating point were frozen
+    # on this cell; fail loudly if a rerun of the grid selects differently.
+    if not (
+        math.isclose(selected["ld"], DAMPING_LD, abs_tol=1e-9)
+        and math.isclose(selected["omega_n"], DAMPING_OMEGA_N, abs_tol=1e-9)
+        and math.isclose(selected["zeta"], 1.0, abs_tol=1e-9)
+    ):
+        raise RuntimeError(
+            "test-1 grid selection deviates from the frozen operating point "
+            f"(L_d={DAMPING_LD}, omega_n={DAMPING_OMEGA_N:.6f}, zeta=1): "
+            f"got {selected}"
+        )
 
     run_test2(
         table_dir,
         fig_dir,
-        DAMPING_OMEGA_N,
-        1.0,
-        ld=DAMPING_LD,
+        selected["omega_n"],
+        selected["zeta"],
+        ld=selected["ld"],
     )
     trace_root = args.out_root / sub / "hw_reference_traces"
     if args.tag:

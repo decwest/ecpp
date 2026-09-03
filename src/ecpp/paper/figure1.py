@@ -47,14 +47,16 @@ SCENARIOS = (
         "design_label": r"$\omega_n=\omega_{n,\max}$, $\zeta=1/\sqrt{2}$",
     },
     {
+        # Same condition and lookahead as the speed row; critically damped.
+        # This is the hardware arm ECPP_L100_W1133_Z1000.
         "key": "damping",
         "row_label": "Damping shaping",
-        "lookahead": study.DAMPING_LD,
-        "ey0": study.DAMPING_COND[0],
-        "eth0": study.DAMPING_COND[1],
-        "omega_n": study.DAMPING_OMEGA_N,
+        "lookahead": study.SPEED_LD,
+        "ey0": study.SPEED_COND[0],
+        "eth0": study.SPEED_COND[1],
+        "omega_n": study.SPEED_OMEGA_N_MAX,
         "zeta": 1.0,
-        "design_label": r"$\omega_n=1.556$ rad/s, $\zeta=1$",
+        "design_label": r"$\omega_n=\omega_{n,\max}$, $\zeta=1$",
     },
 )
 
