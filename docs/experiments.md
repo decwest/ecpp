@@ -3,7 +3,7 @@
 The canonical IEEE Access simulations are generated with:
 
 ```bash
-uv run python -m ecpp.paper ieee-access --out-root /path/to/paper
+uv run python -m ecpp.paper ieee-access --out-root /path/to/ECPP_ACCESS/manuscript
 ```
 
 Pass `--apply` only when the generated assets should be written below

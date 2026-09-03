@@ -114,7 +114,7 @@ class ExperimentConfig:
     representative_zeta: float = 1.0
     max_steps: int = 1100
     output_dir: Path = Path("results/access_ecpp_fixed_speed")
-    export_tex_project_dir: Path | None = Path("../tex_docker_environment/projects/fumiya_ieee_access")
+    export_tex_project_dir: Path | None = Path("../tex_docker_environment/projects/ECPP_ACCESS/manuscript")
     paths: tuple[PathSpec, ...] = (
         PathSpec("straight", "Straight", "straight", {"length": 6.0, "num_points": 700}),
         PathSpec("arc", "Arc", "arc", {"radius": 1.5, "angle_deg": 90.0, "num_points": 600}),
@@ -201,7 +201,7 @@ def experiment_config_from_mapping(data: Mapping[str, Any], base_dir: Path | Non
         representative_omega_n = omega_n_values[0]
 
     output_dir = Path(str(experiment.get("output_dir", "results/access_ecpp_fixed_speed")))
-    export_raw = experiment.get("export_tex_project_dir", "../tex_docker_environment/projects/fumiya_ieee_access")
+    export_raw = experiment.get("export_tex_project_dir", "../tex_docker_environment/projects/ECPP_ACCESS/manuscript")
     export_dir = None if export_raw in {None, ""} else _resolve_path(base_dir, Path(str(export_raw)))
 
     return ExperimentConfig(

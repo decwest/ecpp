@@ -17,8 +17,7 @@ PAPER_ROOT = (
     REPO_ROOT.parent
     / "tex_docker_environment"
     / "projects"
-    / "fumiya_ieee_access"
-    / "fumiya_ieee_access"
+    / "ECPP_ACCESS"
 )
 
 
