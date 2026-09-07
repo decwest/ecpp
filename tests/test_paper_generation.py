@@ -8,7 +8,7 @@ import sys
 import pytest
 import numpy as np
 
-from ecpp.paper import figure1, ieee_access
+from ecpp.paper import figure1, ieee_access, test3_preview
 from ecpp.paper.tracking import simulate_fixed_speed
 
 
@@ -26,7 +26,7 @@ PAPER_ROOT = (
     (
         "generate_sim_evaluation_outputs.py",
         "generate_figure1_pp_ecpp_matrix.py",
-        "generate_fixed_speed_pp_dpp_ecpp.py",
+        "generate_sim_test3_outputs.py",
     ),
 )
 def test_paper_local_generators_are_thin_runnable_wrappers(relative_script):
@@ -61,6 +61,7 @@ def test_canonical_cli_is_importable():
     assert completed.returncode == 0, completed.stderr
     assert "figure1" in completed.stdout
     assert "ieee-access" in completed.stdout
+    assert "test3-preview" in completed.stdout
 
 
 def test_canonical_ieee_cli_accepts_explicit_apply(tmp_path):
@@ -280,3 +281,87 @@ def test_configured_pp_equivalent_ecpp_matches_pp(ld, ey0, epsi0):
     ecpp = simulate_fixed_speed(method="ECPP", **common)
     np.testing.assert_allclose(ecpp.pose, pp.pose, atol=2e-12, rtol=0.0)
     np.testing.assert_allclose(ecpp.curvature, pp.curvature, atol=2e-12, rtol=0.0)
+
+
+def test_frozen_test3_conditions_are_exact():
+    assert test3_preview.V0 == pytest.approx(0.5)
+    assert test3_preview.DT == pytest.approx(1.0 / 30.0)
+    assert test3_preview.OMEGA_MAX == pytest.approx(1.5)
+    assert test3_preview.OMEGA_N == pytest.approx(ieee_access.SPEED_OMEGA_N_MAX)
+    assert test3_preview.ZETA == pytest.approx(1.0)
+    assert test3_preview.COND == pytest.approx((0.15, 0.0))
+    assert test3_preview.LOOKAHEADS == pytest.approx((0.5, 1.0))
+    assert test3_preview.METHODS == ("PP", "ECPP")
+    assert test3_preview.ARMS == (("PP", 0.5), ("PP", 1.0), ("ECPP", 0.5), ("ECPP", 1.0))
+    assert test3_preview.LEAD_IN == pytest.approx(8.0)
+    assert test3_preview.RECOVERY_GOAL == pytest.approx(6.0)
+    assert test3_preview.ARC_R == pytest.approx(3.0)
+    assert test3_preview.ARC_ANGLE == pytest.approx(np.pi / 2.0)
+    assert test3_preview.EXIT_CONTROL == pytest.approx(6.0)
+    assert test3_preview.EXIT_EVAL == pytest.approx(4.0)
+    path = test3_preview.StraightArcStraightPath()
+    assert path.s_entry == pytest.approx(8.0)
+    assert path.s_exit == pytest.approx(8.0 + 1.5 * np.pi)
+    assert path.goal == pytest.approx(path.s_exit + 4.0)
+    assert path.length == pytest.approx(path.s_exit + 6.0)
+    np.testing.assert_allclose(path.point(path.s_exit), [11.0, 3.0], atol=1e-12)
+    assert path.heading(path.s_exit) == pytest.approx(np.pi / 2.0)
+    np.testing.assert_allclose(path.point(path.goal), [11.0, 7.0], atol=1e-12)
+    assert test3_preview.ENTRY_WINDOW == pytest.approx((6.5, 10.0))
+    assert test3_preview.EXIT_WINDOW == pytest.approx(
+        (path.s_exit - 1.0, path.s_exit + 3.0)
+    )
+    # The zero-error feedforward is exactly the arc curvature once the carrot
+    # and the robot are both on the arc, and zero on the lead-in straight.
+    assert path.feedforward_curvature(9.5, 1.0) == pytest.approx(1.0 / 3.0)
+    assert path.feedforward_curvature(6.0, 1.0) == pytest.approx(0.0)
+    assert path.feedforward_curvature(7.5, 1.0) > 0.0
+
+
+def test_test3_recovery_matches_test1_grid():
+    _, _, metrics, consistency = test3_preview.simulate_arms()
+    expected = {
+        "PP_ld0p50": (1.53, 4.20, 0.0063),
+        "PP_ld1p00": (3.03, 8.40, 0.0064),
+        "ECPP_ld0p50": (3.37, 5.87, 0.0000),
+        "ECPP_ld1p00": (3.23, 5.70, 0.0000),
+    }
+    assert [m["key"] for m in metrics] == list(expected)
+    for m in metrics:
+        t_r, t_s, m_os = expected[m["key"]]
+        assert m["T_r"] == pytest.approx(t_r, abs=0.005)
+        assert m["T_s"] == pytest.approx(t_s, abs=0.005)
+        assert m["M_os"] == pytest.approx(m_os, abs=5e-5)
+        assert consistency[m["key"]]["max_abs_dev"] <= test3_preview.DT
+        assert m["sat_ratio"] == 0.0
+        assert m["goal_reached"]
+    by_key = {m["key"]: m for m in metrics}
+    # Recovery depends on (omega_n, zeta) only for ECPP; PP doubles with L_d.
+    assert by_key["PP_ld1p00"]["T_s"] == pytest.approx(
+        2.0 * by_key["PP_ld0p50"]["T_s"], abs=0.05
+    )
+    assert abs(by_key["ECPP_ld1p00"]["T_s"] - by_key["ECPP_ld0p50"]["T_s"]) < 0.25
+    # Transition behaviour follows L_d for both methods.
+    for method in ("PP", "ECPP"):
+        short, long = by_key[f"{method}_ld0p50"], by_key[f"{method}_ld1p00"]
+        assert long["d_lead"] > short["d_lead"]
+        assert long["e_y_in"] > short["e_y_in"]
+        assert long["e_y_out"] < short["e_y_out"]
+
+
+def test_test3_cli_preview_and_apply(tmp_path):
+    test3_preview.main(["--out-root", str(tmp_path)])
+    preview = tmp_path / "generated_preview"
+    assert (preview / "tables" / "sim_test3_results.tex").is_file()
+    assert (preview / "tables" / "sim_test3_metrics.json").is_file()
+    assert (preview / "figures" / "sim_test3_preview_decoupling.pdf").is_file()
+    assert not (tmp_path / "generated").exists()
+    test3_preview.main(["--out-root", str(tmp_path), "--apply"])
+    applied = tmp_path / "generated"
+    assert (applied / "tables" / "sim_test3_results.tex").is_file()
+    assert (applied / "figures" / "sim_test3_preview_decoupling.pdf").is_file()
+    assert (applied / "traces" / "sim_test3_PP_ld0p50.csv").is_file()
+    table = (applied / "tables" / "sim_test3_results.tex").read_text()
+    assert "\\bottomrule" in table and table.count("\nPP &") == 2 and table.count("\nECPP &") == 2
+    with pytest.raises(SystemExit):
+        test3_preview.main(["--out-root", str(tmp_path), "--apply", "--tag", "x"])

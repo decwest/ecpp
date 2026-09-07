@@ -50,6 +50,27 @@ Test 2 (method and gate comparison):
 - 4 methods x 8 conditions x 2 paths = 64 runs
 - no discontinuous-corner path
 
+Test 3 (preview range versus local response, straight-arc-straight path):
+
+- generated with `uv run python -m ecpp.paper test3-preview --out-root ...`
+- path: 8 m straight (the Test-1 straight) -> left arc `R = 3 m` over 90 deg
+  without a transition curve (the Test-2 radius) -> 6 m straight; the
+  evaluation ends 4 m after the arc exit (`s_entry = 8.0 m`,
+  `s_exit = 8 + 3 pi / 2 = 12.712 m`, `goal = 16.712 m`)
+- initial condition `(e_y(0), e_psi(0)) = (0.15 m, 0 deg)` (the Test-1
+  condition), so the recovery metrics over `s in [0, 6 m]` reproduce the
+  Test-1 grid cells and are asserted to match
+- arms: PP and ECPP at `L_d = {0.5, 1.0} m`; ECPP uses the hardware design
+  point `omega_n = omega_n_max(1.0) = 1.132872 rad/s`, `zeta = 1` for both
+  lookaheads (inside the rate bound for both; `lambda = 0.73` at 0.5 m)
+- metrics: recovery `T_r`, `T_s^2%`, `M_os`; steering lead `d_lead`
+  (first `|kappa_des| >= 0.1 / R` before the entry, searched from 6.5 m);
+  entry in-cut `e_y,in = max e_y` on `[entry - 1.5, entry + 2.0] m`
+  (left turn: inside is `+e_y`); exit out-flow `e_y,out = min e_y` on
+  `[exit - 1.0, exit + 3.0] m`; `max |d omega_raw / dt|` over the transition;
+  saturation ratio; the zero-error feedforward `kappa_prev(s)` per `L_d`
+- 2 methods x 2 lookaheads = 4 runs
+
 Unified metric vocabulary (chapters 5 and 6): MAE lateral / heading error,
 `T_r` (90->10%), `T_s` (2% band in simulation, 10% band on hardware),
 `M_os`, `T_m` (Test 2 / hardware only), and the raw curvature-command

@@ -43,6 +43,7 @@ The IEEE Access artifact generators are also canonical package commands:
 ```bash
 uv run ecpp-paper figure1 --out-root /path/to/ECPP_ACCESS/manuscript
 uv run ecpp-paper ieee-access --out-root /path/to/ECPP_ACCESS/manuscript
+uv run ecpp-paper test3-preview --out-root /path/to/ECPP_ACCESS/manuscript
 ```
 
 They write to `generated_preview/` by default; pass `--apply` to write the

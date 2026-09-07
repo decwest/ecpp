@@ -11,7 +11,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument(
         "command",
         nargs="?",
-        choices=("figure1", "ieee-access"),
+        choices=("figure1", "ieee-access", "test3-preview"),
         help="artifact generator to run",
     )
     args, remainder = parser.parse_known_args(argv)
@@ -22,6 +22,11 @@ def main(argv: Sequence[str] | None = None) -> None:
         from .figure1 import main as figure1_main
 
         figure1_main(remainder)
+        return
+    if args.command == "test3-preview":
+        from .test3_preview import main as test3_main
+
+        test3_main(remainder)
         return
     from .ieee_access import main as ieee_access_main
 

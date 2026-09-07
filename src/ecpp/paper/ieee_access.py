@@ -1,7 +1,7 @@
 """Chapter-5 simulation generator for the IEEE Access ECPP paper.
 
-Rebuilt from the ancestor engine ``generate_fixed_speed_pp_dpp_ecpp.py`` and
-the chapter-5 metric definitions in ``generate_hw_exp1_outputs.py``.
+Rebuilt from the ancestor fixed-speed engine and the chapter-5 metric
+definitions in ``generate_hw_exp1_outputs.py``.
 
 Engine (frozen experiment values)
 ---------------------------------
