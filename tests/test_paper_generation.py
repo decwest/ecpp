@@ -195,8 +195,8 @@ def test_frozen_paper_experiment_conditions_are_exact():
     assert ieee_access.SPEED_PP_OMEGA_N == pytest.approx(
         np.sqrt(2.0) * 0.55
     )
-    assert ieee_access.DAMPING_LD == pytest.approx(0.5)
-    assert ieee_access.DAMPING_OMEGA_N == pytest.approx(
+    assert ieee_access.GRID_LD_SHORT == pytest.approx(0.5)
+    assert ieee_access.GRID_PP_OMEGA_N_LD05 == pytest.approx(
         np.sqrt(2.0) * 0.55 / 0.5
     )
     # Frozen hardware experiment-1 arms (redesigned 2026-07-16, L_d=1.0).
@@ -227,14 +227,32 @@ def test_frozen_paper_experiment_conditions_are_exact():
     assert ieee_access.GRID_OMEGAS == pytest.approx((
         ieee_access.SPEED_PP_OMEGA_N,
         ieee_access.SPEED_OMEGA_N_MAX,
-        ieee_access.DAMPING_OMEGA_N,
+        ieee_access.GRID_PP_OMEGA_N_LD05,
     ))
+    assert not hasattr(ieee_access, "_select_grid_cell")
+    # Test 2 (redesigned 2026-09-08): the hardware design point, the paper's
+    # DPP construction, a right-turning arc, and the far conditions that
+    # expose the reachability limit of the ungated linear laws.
+    assert ieee_access.TEST2_LD == pytest.approx(1.0)
+    assert ieee_access.TEST2_OMEGA_N == pytest.approx(ieee_access.SPEED_OMEGA_N_MAX)
+    assert ieee_access.TEST2_ZETA == pytest.approx(1.0)
+    assert ieee_access.DPP_FAR_FACTOR == pytest.approx(2.0)
+    assert ieee_access.ARC_TURN == pytest.approx(-1.0)
+    assert ieee_access.ARC_GOAL == pytest.approx(3.0 * 3.0 * np.pi / 4.0)
     assert [(ey, round(np.rad2deg(epsi)))
             for ey, epsi in ieee_access.TEST2_CONDS] == [
-        (0.0, -30), (0.0, -90),
-        (0.15, 0), (0.15, -30), (0.15, -90),
-        (1.0, 0), (1.0, -30), (1.0, -90),
+        (0.0, -90),
+        (0.3, 0), (0.3, -90),
+        (2.0, 0), (2.0, -90),
+        (3.0, 0), (3.0, -90),
     ]
+    l1, l2, a1, a2, v_gain = ieee_access.dpp_parameters(
+        ieee_access.TEST2_OMEGA_N, ieee_access.TEST2_ZETA, ld=ieee_access.TEST2_LD
+    )
+    assert v_gain == pytest.approx(0.55)
+    assert l1 == pytest.approx(2.0)
+    assert l2 == pytest.approx(1.4286, abs=2e-3)
+    assert a1 * l1**2 + a2 * l2**2 == pytest.approx(2.0)
 
 
 def test_figure1_reuses_preregistered_chapter5_arms_without_gain_search():
@@ -288,65 +306,59 @@ def test_frozen_test3_conditions_are_exact():
     assert test3_preview.DT == pytest.approx(1.0 / 30.0)
     assert test3_preview.OMEGA_MAX == pytest.approx(1.5)
     assert test3_preview.OMEGA_N == pytest.approx(ieee_access.SPEED_OMEGA_N_MAX)
+    assert test3_preview.OMEGA_N == pytest.approx(ieee_access.TEST2_OMEGA_N)
     assert test3_preview.ZETA == pytest.approx(1.0)
-    assert test3_preview.COND == pytest.approx((0.15, 0.0))
+    assert test3_preview.COND == pytest.approx((0.0, 0.0))
     assert test3_preview.LOOKAHEADS == pytest.approx((0.5, 1.0))
     assert test3_preview.METHODS == ("PP", "ECPP")
     assert test3_preview.ARMS == (("PP", 0.5), ("PP", 1.0), ("ECPP", 0.5), ("ECPP", 1.0))
-    assert test3_preview.LEAD_IN == pytest.approx(8.0)
-    assert test3_preview.RECOVERY_GOAL == pytest.approx(6.0)
+    assert test3_preview.LEAD_IN == pytest.approx(3.0)
     assert test3_preview.ARC_R == pytest.approx(3.0)
     assert test3_preview.ARC_ANGLE == pytest.approx(np.pi / 2.0)
     assert test3_preview.EXIT_CONTROL == pytest.approx(6.0)
     assert test3_preview.EXIT_EVAL == pytest.approx(4.0)
+    assert test3_preview.RECOVERY_FRACTION == pytest.approx(0.1)
+    assert test3_preview.ENTRY_MARGIN == pytest.approx(0.5)
+    assert test3_preview.EXIT_MARGIN == pytest.approx(0.5)
+    assert test3_preview.LEAD_SEARCH_START == pytest.approx(1.0)
     path = test3_preview.StraightArcStraightPath()
-    assert path.s_entry == pytest.approx(8.0)
-    assert path.s_exit == pytest.approx(8.0 + 1.5 * np.pi)
+    assert path.s_entry == pytest.approx(3.0)
+    assert path.s_exit == pytest.approx(3.0 + 1.5 * np.pi)
     assert path.goal == pytest.approx(path.s_exit + 4.0)
     assert path.length == pytest.approx(path.s_exit + 6.0)
-    np.testing.assert_allclose(path.point(path.s_exit), [11.0, 3.0], atol=1e-12)
+    np.testing.assert_allclose(path.point(path.s_exit), [6.0, 3.0], atol=1e-12)
     assert path.heading(path.s_exit) == pytest.approx(np.pi / 2.0)
-    np.testing.assert_allclose(path.point(path.goal), [11.0, 7.0], atol=1e-12)
-    assert test3_preview.ENTRY_WINDOW == pytest.approx((6.5, 10.0))
-    assert test3_preview.EXIT_WINDOW == pytest.approx(
-        (path.s_exit - 1.0, path.s_exit + 3.0)
-    )
+    np.testing.assert_allclose(path.point(path.goal), [6.0, 7.0], atol=1e-12)
     # The zero-error feedforward is exactly the arc curvature once the carrot
     # and the robot are both on the arc, and zero on the lead-in straight.
-    assert path.feedforward_curvature(9.5, 1.0) == pytest.approx(1.0 / 3.0)
-    assert path.feedforward_curvature(6.0, 1.0) == pytest.approx(0.0)
-    assert path.feedforward_curvature(7.5, 1.0) > 0.0
+    assert path.feedforward_curvature(4.5, 1.0) == pytest.approx(1.0 / 3.0)
+    assert path.feedforward_curvature(1.0, 1.0) == pytest.approx(0.0)
+    assert path.feedforward_curvature(2.5, 1.0) > 0.0
 
 
-def test_test3_recovery_matches_test1_grid():
-    _, _, metrics, consistency = test3_preview.simulate_arms()
-    expected = {
-        "PP_ld0p50": (1.53, 4.20, 0.0063),
-        "PP_ld1p00": (3.03, 8.40, 0.0064),
-        "ECPP_ld0p50": (3.37, 5.87, 0.0000),
-        "ECPP_ld1p00": (3.23, 5.70, 0.0000),
-    }
-    assert [m["key"] for m in metrics] == list(expected)
+def test_test3_preview_follows_ld_and_recovery_follows_the_gains():
+    _, _, metrics = test3_preview.simulate_arms()
+    assert [m["key"] for m in metrics] == [
+        "PP_ld0p50", "PP_ld1p00", "ECPP_ld0p50", "ECPP_ld1p00",
+    ]
+    by_key = {m["key"]: m for m in metrics}
     for m in metrics:
-        t_r, t_s, m_os = expected[m["key"]]
-        assert m["T_r"] == pytest.approx(t_r, abs=0.005)
-        assert m["T_s"] == pytest.approx(t_s, abs=0.005)
-        assert m["M_os"] == pytest.approx(m_os, abs=5e-5)
-        assert consistency[m["key"]]["max_abs_dev"] <= test3_preview.DT
         assert m["sat_ratio"] == 0.0
         assert m["goal_reached"]
-    by_key = {m["key"]: m for m in metrics}
-    # Recovery depends on (omega_n, zeta) only for ECPP; PP doubles with L_d.
-    assert by_key["PP_ld1p00"]["T_s"] == pytest.approx(
-        2.0 * by_key["PP_ld0p50"]["T_s"], abs=0.05
-    )
-    assert abs(by_key["ECPP_ld1p00"]["T_s"] - by_key["ECPP_ld0p50"]["T_s"]) < 0.25
-    # Transition behaviour follows L_d for both methods.
+        assert m["d_lead"] is not None
+        assert m["T_rec_in"] is not None and m["T_rec_out"] is not None
+        assert m["e_y_in"] > 0.0 > m["e_y_out"]
+    # Preview: the steering lead follows L_d for both methods (about 0.6 L_d).
     for method in ("PP", "ECPP"):
         short, long = by_key[f"{method}_ld0p50"], by_key[f"{method}_ld1p00"]
-        assert long["d_lead"] > short["d_lead"]
+        assert long["d_lead"] > 1.5 * short["d_lead"]
         assert long["e_y_in"] > short["e_y_in"]
         assert long["e_y_out"] < short["e_y_out"]
+    # Local response: PP's exit recovery scales with L_d, ECPP's does not.
+    pp_ratio = by_key["PP_ld1p00"]["T_rec_out"] / by_key["PP_ld0p50"]["T_rec_out"]
+    ecpp_ratio = by_key["ECPP_ld1p00"]["T_rec_out"] / by_key["ECPP_ld0p50"]["T_rec_out"]
+    assert pp_ratio > 1.8
+    assert abs(ecpp_ratio - 1.0) < 0.15
 
 
 def test_test3_cli_preview_and_apply(tmp_path):
@@ -363,5 +375,30 @@ def test_test3_cli_preview_and_apply(tmp_path):
     assert (applied / "traces" / "sim_test3_PP_ld0p50.csv").is_file()
     table = (applied / "tables" / "sim_test3_results.tex").read_text()
     assert "\\bottomrule" in table and table.count("\nPP &") == 2 and table.count("\nECPP &") == 2
+    assert "$T_{\\rm rec,in}$" in table and "$T_{\\rm rec,out}$" in table
     with pytest.raises(SystemExit):
         test3_preview.main(["--out-root", str(tmp_path), "--apply", "--tag", "x"])
+
+
+def test_ungated_linear_laws_stay_saturated_far_from_the_path():
+    """Beyond the reachability limit, DPP and ungated ECPP circle forever.
+
+    At the test-2 design point the ungated lateral term keeps
+    max_theta omega_raw below -omega_max once e_y exceeds about 1.7 m (DPP)
+    and 2.4 m (ECPP w/o gate); the gated ECPP falls back to PP and converges.
+    """
+    ieee_access.configure(ld=ieee_access.TEST2_LD)
+    path = ieee_access.StraightPath()
+    results = {}
+    for method in ("DPP", "ECPP w/o gate", "ECPP"):
+        m, _, _ = ieee_access.run_metrics(
+            path, method, ieee_access.TEST2_OMEGA_N, ieee_access.TEST2_ZETA, 3.0, 0.0
+        )
+        results[method] = m
+    assert results["DPP"]["evaluation_completed"] is False
+    assert results["ECPP w/o gate"]["evaluation_completed"] is False
+    assert results["DPP"]["sat_ratio"] == pytest.approx(1.0)
+    assert results["ECPP w/o gate"]["sat_ratio"] == pytest.approx(1.0)
+    assert results["ECPP"]["evaluation_completed"] is True
+    assert results["ECPP"]["sat_ratio"] == 0.0
+    assert results["ECPP"]["T_s"] is not None

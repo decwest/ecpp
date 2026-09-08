@@ -56,6 +56,7 @@ class EcppConfig:
     dpp_omega_n: float = 1.0
     dpp_zeta: float = 1.0
     dpp_gain_speed: float = 0.50
+    dpp_far_factor: float = 2.0
 
     def __post_init__(self) -> None:
         if self.lookahead_m <= 0.0:
@@ -76,6 +77,8 @@ class EcppConfig:
             raise ValueError("zeta values must be > 0")
         if self.ecpp_v_epsilon <= 0.0:
             raise ValueError("ecpp_v_epsilon must be > 0")
+        if self.dpp_far_factor <= 0.0:
+            raise ValueError("dpp_far_factor must be > 0")
         if self.ecpp_gate_error_on < 0.0:
             raise ValueError("gate error on threshold must be non-negative")
         if self.ecpp_gate_error_off <= self.ecpp_gate_error_on:

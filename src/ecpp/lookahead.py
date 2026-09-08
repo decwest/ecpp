@@ -80,7 +80,8 @@ def project_to_path(
     Zero-length segments are ignored. Equal-distance candidates are resolved
     toward the smaller arc length, which makes a crossing deterministic and
     preserves the current branch when ``minimum_arc_length`` is carried from
-    the preceding control cycle.
+    the preceding control cycle.  The search is vectorized over all segments;
+    the selection rule is the same as the original per-segment scan.
     """
 
     distances = _validate_path(path, path_distances)
@@ -88,48 +89,16 @@ def project_to_path(
     total_length = float(distances[-1])
     min_s = float(np.clip(float(minimum_arc_length), 0.0, total_length))
 
-    best: PathProjection | None = None
-    for segment_index in range(len(path) - 1):
-        p0 = np.asarray(path[segment_index, :2], dtype=float)
-        p1 = np.asarray(path[segment_index + 1, :2], dtype=float)
-        delta = p1 - p0
-        length = float(np.linalg.norm(delta))
-        if length <= _EPS:
-            continue
+    points = np.asarray(path[:, :2], dtype=float)
+    p0 = points[:-1]
+    delta = points[1:] - p0
+    length = np.linalg.norm(delta, axis=1)
+    s_start = distances[:-1]
+    s_end = distances[1:]
+    valid = (length > _EPS) & ~(s_end < min_s - _EPS)
+    indices = np.flatnonzero(valid)
 
-        s_start = float(distances[segment_index])
-        s_end = float(distances[segment_index + 1])
-        if s_end < min_s - _EPS:
-            continue
-        t_min = float(np.clip((min_s - s_start) / length, 0.0, 1.0))
-        t_unclamped = float(np.dot(query - p0, delta) / (length * length))
-        interpolation = float(np.clip(t_unclamped, t_min, 1.0))
-        position = p0 + interpolation * delta
-        squared_distance = float(np.dot(query - position, query - position))
-        arc_length = float(s_start + interpolation * length)
-
-        candidate = PathProjection(
-            segment_index=segment_index,
-            interpolation=interpolation,
-            arc_length=arc_length,
-            position=position,
-            tangent=delta / length,
-            remaining_length=max(total_length - arc_length, 0.0),
-            squared_distance=squared_distance,
-        )
-        if best is None:
-            best = candidate
-            continue
-        distance_tolerance = _EPS * max(1.0, best.squared_distance, candidate.squared_distance)
-        if candidate.squared_distance < best.squared_distance - distance_tolerance:
-            best = candidate
-        elif (
-            abs(candidate.squared_distance - best.squared_distance) <= distance_tolerance
-            and candidate.arc_length < best.arc_length - _EPS
-        ):
-            best = candidate
-
-    if best is None:
+    if len(indices) == 0:
         # This is only reachable when min_s is at the end and all trailing
         # segments have zero length. Sample the final non-zero segment instead.
         location = sample_path_at_arc_length(path, distances, total_length)
@@ -138,7 +107,36 @@ def project_to_path(
             **location.__dict__,
             squared_distance=float(np.dot(offset, offset)),
         )
-    return best
+
+    seg_p0 = p0[indices]
+    seg_delta = delta[indices]
+    seg_length = length[indices]
+    seg_s_start = s_start[indices]
+    t_min = np.clip((min_s - seg_s_start) / seg_length, 0.0, 1.0)
+    t_unclamped = np.einsum("ij,ij->i", query - seg_p0, seg_delta) / (
+        seg_length * seg_length
+    )
+    interpolation = np.minimum(np.maximum(t_unclamped, t_min), 1.0)
+    positions = seg_p0 + interpolation[:, None] * seg_delta
+    residual = query - positions
+    squared = np.einsum("ij,ij->i", residual, residual)
+    arc_lengths = seg_s_start + interpolation * seg_length
+
+    best_squared = float(np.min(squared))
+    tolerance = _EPS * max(1.0, best_squared)
+    tied = np.flatnonzero(squared <= best_squared + tolerance)
+    chosen = int(tied[np.argmin(arc_lengths[tied])])
+
+    segment_index = int(indices[chosen])
+    return PathProjection(
+        segment_index=segment_index,
+        interpolation=float(interpolation[chosen]),
+        arc_length=float(arc_lengths[chosen]),
+        position=positions[chosen].copy(),
+        tangent=seg_delta[chosen] / seg_length[chosen],
+        remaining_length=max(total_length - float(arc_lengths[chosen]), 0.0),
+        squared_distance=float(squared[chosen]),
+    )
 
 
 def resolve_path_projection(
@@ -183,12 +181,13 @@ def sample_path_at_arc_length(
     target_s = float(np.clip(float(arc_length), 0.0, total_length))
 
     nonzero_segments = np.flatnonzero(np.diff(distances) > _EPS)
-    selected_index = int(nonzero_segments[-1])
-    for raw_index in nonzero_segments:
-        index = int(raw_index)
-        if target_s <= float(distances[index + 1]) + _EPS:
-            selected_index = index
-            break
+    # First non-zero segment whose end lies at or beyond the target arc length
+    # (the original linear scan), found with a binary search.
+    segment_ends = distances[nonzero_segments + 1]
+    position_in_list = int(np.searchsorted(segment_ends, target_s - _EPS, side="left"))
+    if position_in_list >= len(nonzero_segments):
+        position_in_list = len(nonzero_segments) - 1
+    selected_index = int(nonzero_segments[position_in_list])
 
     p0 = np.asarray(path[selected_index, :2], dtype=float)
     p1 = np.asarray(path[selected_index + 1, :2], dtype=float)

@@ -17,15 +17,24 @@ Implemented curvature laws:
 - ECPP without gate: ECPP compensation with sigma fixed to one.
 - ECPP: ECPP compensation with a state-dependent gate.
 
-For DPP, the first preview distance is matched to the PP/ECPP lookahead:
+DPP follows Wang and Mouri (Trans. JSME, 2025).  The two preview points lie
+on the vehicle axis, `L_1 = dpp_far_factor * L_d` (default `2 L_d`) and `L_2`
+ahead of the robot; `e_p,i` is the left-positive lateral deviation of each
+point from the reference path (its own closest path location), and
 
 ```text
-v_gain = v_max
-T_p1 = L_d / v_max
+kappa = -(a_1 e_p1 + a_2 e_p2)
+a_1 + a_2             = K_y        K_y     = (omega_n / v_gain)^2
+a_1 L_1 + a_2 L_2     = K_theta    K_theta = 2 zeta omega_n / v_gain
+a_1 L_1^2 + a_2 L_2^2 = 2          (constant-curvature condition, paper eq. 19)
+v_gain = v_max + v_epsilon
 ```
 
-If the derived second preview time is not positive or the gain equations are
-singular, that DPP design point is omitted from the experiment results.
+The third condition fixes `L_2 = (2 - L_1 K_theta) / (K_theta - L_1 K_y)`.
+On a straight path `e_p,i = e_y + L_i sin(e_psi)` exactly, so the law reduces
+to `-K_y e_y - K_theta sin(e_psi)`.  If the derived near preview distance is
+not positive or the equations are singular, that DPP design point is omitted
+from the experiment results.
 
 For ECPP, the state-dependent gate follows the relative linearization error
 rates used in the paper:

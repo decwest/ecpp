@@ -13,9 +13,13 @@ Engine (frozen experiment values)
   {1.0, 0.5} m at the single fixed initial condition (0.15 m, 0 deg).
   Every omega_n on the axis is a named quantity (PP-equivalent at L_d=1.0,
   the rate-bound design limit at L_d=1.0, PP-equivalent at L_d=0.5).
-* Test 2 uses the grid cell selected by the pre-declared rule (in-bound,
-  minimal T_s^2%): L_d=0.5 m, zeta=1, the configured PP-equivalent omega_n.
-  Its initial conditions are the full one-sided 3x3 grid minus the origin.
+* Test 2 uses the design point of the hardware experiments: L_d = 1.0 m,
+  omega_n = omega_n_max(1.0 m) = 1.132872 rad/s, zeta = 1 (critical damping
+  at the rate-bound design limit).  Its initial conditions are the one-sided
+  grid {0, 0.30, 2.0, 3.0 m} x {0, -90 deg} minus the origin (7 conditions):
+  0.30 m keeps the gate open (sigma = 0.99), 2.0 m starts with the gate
+  closed, and 3.0 m lies beyond the distance at which the ungated linear
+  laws saturate permanently.
 * Controllers: PP, DPP, ECPP w/o gate (sigma == 1), ECPP (gated).
 * ECPP law  kappa_des = kappa_PP - sigma(e_y) * (dK_y e_y + dK_theta sin e_theta)
       dK_y     = K_y - 2/L_d^2 ,  K_y     = (omega_n / (|v|+0.05))^2
@@ -23,11 +27,15 @@ Engine (frozen experiment values)
 * Gate: descending sigmoid of eps_y = (e_y / L_d)^2 ONLY (heading independent),
   with eps_on = 0.10, eps_off = 0.50 (residual p = 0.01). This matches the
   current paper (the gate does not depend on heading error).
-* DPP: two-preview curvature a1 yb1 + a2 yb2 with L1 = L_d, L2 = 2 L_d,
-  coefficients matched to the target gains (K_y, K_theta).
-* Paths: straight 8 m (eval goal s = 6.0 m); arc R = 3.0 m over 180 deg with the
-  first 90 deg (eval goal s = R*pi/2) evaluated so the lookahead never pins at
-  the path end.
+* DPP (Wang and Mouri, Trans. JSME 2025): preview points on the vehicle axis
+  at L_1 = 2 L_d and L_2, lateral deviations e_p,i measured from the path,
+  kappa = -(a1 e_p1 + a2 e_p2).  L_2, a1, a2 follow from the three design
+  conditions (natural frequency, damping, and the constant-curvature
+  condition a1 L1^2 + a2 L2^2 = 2); see ``controllers.dpp``.
+* Paths: straight 8 m (eval goal s = 6.0 m); right-turning arc R = 3.0 m over
+  180 deg (positive e_y is the outside) with the first 135 deg
+  (eval goal s = R*3pi/4) evaluated so the lookahead never pins at the path
+  end.
 * PP, DPP, and ECPP all use the package's shared continuous ``PathProjection``
   and arc-length-interpolated carrots.  Stored path-pose orientation is not
   used by the controller.
@@ -60,6 +68,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
+from ..config import EcppConfig
+from ..controllers.dpp import calc_dpp_parameters
 from ..controllers.gates import gate_abs
 from .tracking import simulate_fixed_speed
 
@@ -74,7 +84,7 @@ V_EPSILON = 0.05     # m/s additive low-speed regularization
 OMEGA_MAX = 1.5      # rad/s instantaneous state-update clip
 DT = 1.0 / 30.0      # s control period (30 Hz)
 LD = 1.0             # m mutable lookahead used by one simulation run
-LD_DPP2 = 2.0        # m second DPP preview distance (= 2 L_d)
+DPP_FAR_FACTOR = 2.0  # DPP far preview distance L_1 = DPP_FAR_FACTOR * L_d
 EPS_ON = 0.10
 EPS_OFF = 0.50
 GATE_P = 0.01        # sigmoid residual
@@ -84,8 +94,9 @@ CARROT_RULE = "arc"  # fixed: nominal arc-length lookahead
 STRAIGHT_LEN = 8.0
 STRAIGHT_GOAL = 6.0
 ARC_R = 3.0
+ARC_TURN = -1.0              # right turn: positive e_y is the outside of the arc
 ARC_ANGLE = math.pi          # 180 deg control path
-ARC_GOAL = ARC_R * math.pi / 2.0   # evaluate first 90 deg
+ARC_GOAL = ARC_R * 3.0 * math.pi / 4.0   # evaluate first 135 deg
 
 # secondary acceleration bound (report only): assumed platform angular
 # acceleration budget; illustrative, plays no role in the design grid.
@@ -146,10 +157,9 @@ def configure(omega_max=None, ld=None, tmax=None, carrot_rule=None):
     """Reconfigure L_d, horizon, and representative conditions.
 
     ``omega_max`` remains as a compatibility argument but accepts only the
-    fixed 1.5 rad/s state-update clip. ``LD_DPP2`` tracks ``2*L_d`` per the DPP
-    definition.
+    fixed 1.5 rad/s state-update clip.
     """
-    global OMEGA_MAX, LD, LD_DPP2, TMAX, CARROT_RULE
+    global OMEGA_MAX, LD, TMAX, CARROT_RULE
     global PP_OMEGA_N, EBAR_G, OMEGA_N_MAX
     if omega_max is not None:
         if not math.isclose(float(omega_max), 1.5, abs_tol=1e-12):
@@ -165,7 +175,6 @@ def configure(omega_max=None, ld=None, tmax=None, carrot_rule=None):
         if carrot_rule != "arc":
             raise ValueError(f"unknown carrot rule: {carrot_rule!r}")
         CARROT_RULE = carrot_rule
-    LD_DPP2 = 2.0 * LD
     PP_OMEGA_N = math.sqrt(2.0) * (V0 + V_EPSILON) / LD
     EBAR_G = gate_envelope_error_bound()
     OMEGA_N_MAX = omega_n_max(1.0, EBAR_G, sbar=0.0)
@@ -224,28 +233,34 @@ class ArcPath:
     key = "arc"
     name = "Constant-curvature arc"
 
-    def __init__(self, R=ARC_R, angle=ARC_ANGLE, goal=ARC_GOAL):
+    def __init__(self, R=ARC_R, angle=ARC_ANGLE, goal=ARC_GOAL, turn=ARC_TURN):
         self.R = R
         self.angle = angle
         self.length = R * angle
         self.goal = goal
+        # +1: left turn (positive e_y is the inside); -1: right turn
+        # (positive e_y is the outside).
+        self.turn = 1.0 if float(turn) >= 0.0 else -1.0
 
     def point(self, s):
         s = float(np.clip(s, 0, self.length))
         a = s / self.R
-        return np.array([self.R * math.sin(a), self.R * (1.0 - math.cos(a))])
+        return np.array([
+            self.R * math.sin(a),
+            self.turn * self.R * (1.0 - math.cos(a)),
+        ])
 
     def theta(self, s):
         s = float(np.clip(s, 0, self.length))
-        return s / self.R
+        return self.turn * s / self.R
 
     def curvature(self, s):
-        return 1.0 / self.R
+        return self.turn / self.R
 
     def closest_s(self, p):
-        v = np.array([p[0], p[1] - self.R])
+        v = np.array([p[0], p[1] - self.turn * self.R])
         ang = math.atan2(v[1], v[0])
-        a = ang + math.pi / 2.0
+        a = self.turn * ang + math.pi / 2.0
         return float(np.clip(self.R * a, 0, self.length))
 
     def sample(self, n=400):
@@ -263,13 +278,38 @@ class ArcPath:
 # ---------------------------------------------------------------------------
 # Shared controller adapter
 # ---------------------------------------------------------------------------
+def dpp_parameters(omega_n, zeta, v=None, ld=None, far_factor=None):
+    """DPP preview distances and coefficients (Wang-Mouri design pattern 3).
+
+    Returns ``(L1, L2, a1, a2, v_gain)`` from the same controller function the
+    simulation uses, so the paper tables and the closed loop cannot drift.
+    Raises ``ValueError`` when the design point has no admissible near
+    preview distance.
+    """
+
+    v = V0 if v is None else v
+    ld = LD if ld is None else ld
+    far_factor = DPP_FAR_FACTOR if far_factor is None else far_factor
+    config = EcppConfig(
+        lookahead_m=float(ld),
+        v_max=abs(float(v)),
+        ecpp_omega_n=float(omega_n),
+        ecpp_zeta=float(zeta),
+        ecpp_v_epsilon=V_EPSILON,
+        dpp_omega_n=float(omega_n),
+        dpp_zeta=float(zeta),
+        dpp_gain_speed=abs(float(v)),
+        dpp_far_factor=float(far_factor),
+    )
+    return calc_dpp_parameters(config)
+
+
 class Gains:
     """Configured gains recorded with a trace for analysis overlays."""
 
-    def __init__(self, omega_n, zeta, v=None, ld=None, ld2=None):
+    def __init__(self, omega_n, zeta, v=None, ld=None):
         v = V0 if v is None else v
         ld = LD if ld is None else ld
-        ld2 = LD_DPP2 if ld2 is None else ld2
         v_gain = abs(v) + V_EPSILON
         self.omega_n = omega_n
         self.zeta = zeta
@@ -280,10 +320,15 @@ class Gains:
         self.Kth_pp = 2.0 / ld
         self.dKy = self.Ky - self.Ky_pp
         self.dKth = self.Kth - self.Kth_pp
-        self.L1 = ld
-        self.L2 = ld2
-        self.a1 = (self.Kth - self.Ky * self.L2) / (self.L1 - self.L2)
-        self.a2 = self.Ky - self.a1
+        # DPP geometry exists only where the paper's three conditions admit a
+        # positive near preview distance; other cells simply record None.
+        self.L1 = self.L2 = self.a1 = self.a2 = None
+        try:
+            self.L1, self.L2, self.a1, self.a2, _ = dpp_parameters(
+                omega_n, zeta, v=v, ld=ld
+            )
+        except ValueError:
+            pass
 
 
 def sigmoid_desc(eps, eps_on=EPS_ON, eps_off=EPS_OFF, p=GATE_P):
@@ -886,8 +931,8 @@ SPEED_PP_OMEGA_N = math.sqrt(2.0) * (V0 + V_EPSILON) / SPEED_LD
 SPEED_EBAR_G = math.sqrt(EPS_OFF) * SPEED_LD
 SPEED_OMEGA_N_MAX = omega_n_max(SPEED_ZETA, SPEED_EBAR_G, sbar=0.0)
 
-DAMPING_LD = 0.5
-DAMPING_OMEGA_N = math.sqrt(2.0) * (V0 + V_EPSILON) / DAMPING_LD
+GRID_LD_SHORT = 0.5
+GRID_PP_OMEGA_N_LD05 = math.sqrt(2.0) * (V0 + V_EPSILON) / GRID_LD_SHORT
 
 # ---------------------------------------------------------------------------
 # Frozen TEST 1 design: full (omega_n, zeta, L_d) grid at one fixed initial
@@ -898,12 +943,13 @@ DAMPING_OMEGA_N = math.sqrt(2.0) * (V0 + V_EPSILON) / DAMPING_LD
 # The fixed initial condition keeps the gate fully on for BOTH lookaheads
 # ((0.15/0.5)^2 = 0.09 < eps_on = 0.10), so every cell starts in the linear
 # pole-placement regime; saturation phenomenology is exercised by the far
-# test-2 conditions instead.
+# test-2 conditions instead.  Test 1 is a parameter study only; it does not
+# select the test-2 operating point.
 # ---------------------------------------------------------------------------
-GRID_LDS = (1.0, 0.5)
+GRID_LDS = (1.0, GRID_LD_SHORT)
 GRID_COND = (0.15, 0.0)
 GRID_ZETAS = (1.0 / math.sqrt(2.0), 1.0, math.sqrt(2.0))
-GRID_OMEGAS = (SPEED_PP_OMEGA_N, SPEED_OMEGA_N_MAX, DAMPING_OMEGA_N)
+GRID_OMEGAS = (SPEED_PP_OMEGA_N, SPEED_OMEGA_N_MAX, GRID_PP_OMEGA_N_LD05)
 GRID_OMEGA_NAMES = (
     "pp_equivalent_ld_1p0",
     "omega_n_max_ld_1p0",
@@ -1103,8 +1149,8 @@ def _write_test1_grid_table(path_out, blocks):
                 f(row["lambda"], 2),
                 f(row.get("bar_e_y"), 3),
                 f(row.get("bar_e_theta_deg"), 2),
-                f(row.get("T_r"), 2),
-                f(row.get("T_s_02"), 2),
+                f(row.get("T_r"), 2, none="n/r"),
+                f(row.get("T_s_02"), 2, none="n/r"),
                 f(row.get("M_os"), 4),
                 f(row.get("kappa_max"), 2),
             ]) + r"\\")
@@ -1159,57 +1205,13 @@ def _fig_test1_grid(fig_dir, blocks, traces):
                 ax.set_xlabel(r"$t$ [s]")
             if j == 0:
                 ax.set_ylabel(r"$e_y$ [m]")
-                handles, labels = ax.get_legend_handles_labels()
                 ax.plot([], [], color="0.35", ls=":", lw=0.8,
-                        label="linear model")
+                        label="design model")
                 ax.legend(fontsize=5.2, framealpha=0.85)
     fig.tight_layout(pad=0.4)
     for ext in ("pdf", "png"):
         fig.savefig(fig_dir / f"sim_test1_grid_response.{ext}", dpi=300)
     plt.close(fig)
-
-
-def _select_grid_cell(blocks):
-    """Pre-declared lexicographic selection over the in-bound cells.
-
-    Minimize T_s^2% first; break ties by the maximum overshoot M_os (at
-    equal settling, prefer the cell that does not cross the path), then by
-    IAE.  At the fixed grid condition the PP-equivalent and the critically
-    damped cell settle in exactly the same number of control periods, so the
-    overshoot key is what separates them.
-    """
-
-    candidates = []
-    for ld in GRID_LDS:
-        for row in blocks[ld]["rows"]:
-            if not row["in_bound"] or row.get("T_s_02") is None:
-                continue
-            candidates.append(row)
-    if not candidates:
-        raise RuntimeError(
-            "test-1 grid selection found no settled in-bound cell"
-        )
-    ranked = sorted(
-        candidates,
-        key=lambda row: (row["T_s_02"], row["M_os"], row["iae_e_y"]),
-    )
-    best = ranked[0]
-    selected = {
-        "key": best["key"],
-        "ld": best["ld"],
-        "omega_n": best["omega_n"],
-        "zeta": best["zeta"],
-        "lambda": best["lambda"],
-        "T_s_02": best["T_s_02"],
-        "M_os": best["M_os"],
-        "iae_e_y": best["iae_e_y"],
-    }
-    if len(ranked) > 1:
-        selected["runner_up"] = {
-            key: ranked[1][key]
-            for key in ("key", "T_s_02", "M_os", "iae_e_y")
-        }
-    return selected
 
 
 def run_test1(table_dir, fig_dir, trace_dir=None):
@@ -1226,7 +1228,6 @@ def run_test1(table_dir, fig_dir, trace_dir=None):
 
     _write_test1_grid_table(table_dir / "sim_test1_grid_results.tex", blocks)
     _fig_test1_grid(fig_dir, blocks, traces)
-    selected = _select_grid_cell(blocks)
 
     out = {
         "meta": {
@@ -1254,13 +1255,8 @@ def run_test1(table_dir, fig_dir, trace_dir=None):
             "cell_count": (
                 len(GRID_LDS) * len(GRID_OMEGAS) * len(GRID_ZETAS)
             ),
-            "selection_rule": (
-                "among in-bound cells (omega_n <= omega_n_max(L_d)), "
-                "minimize T_s^2%; ties broken by M_os, then IAE"
-            ),
         },
         "blocks": {_ld_tag(ld): blocks[ld] for ld in GRID_LDS},
-        "selected": selected,
     }
     (table_dir / "sim_test1_metrics.json").write_text(
         json.dumps(_clean(out), indent=2), encoding="utf-8"
@@ -1272,12 +1268,20 @@ def run_test1(table_dir, fig_dir, trace_dir=None):
 # TEST 2 : method comparison on straight and smooth R=3 m arc
 # ---------------------------------------------------------------------------
 TEST2_METHODS = ["PP", "DPP", "ECPP w/o gate", "ECPP"]
-# Full one-sided 3x3 initial-condition grid minus the trivial origin.
-# Mirror-symmetric positive headings are omitted; e_y = 0 rows exercise the
+# Operating point shared with the hardware experiments and test 3: the
+# rate-bound design limit at L_d = 1.0 m with critical damping.
+TEST2_LD = SPEED_LD
+TEST2_OMEGA_N = SPEED_OMEGA_N_MAX
+TEST2_ZETA = 1.0
+# One-sided initial-condition grid minus the trivial origin.  Mirror-symmetric
+# negative offsets / positive headings are omitted.  e_y = 0 rows exercise the
 # pure-heading response, where the e_y-driven gate starts fully open and the
 # initial-error-normalized transient metrics (T_r, T_s, M_os) are undefined.
-TEST2_EY0S = (0.0, 0.15, 1.0)
-TEST2_ETH0_DEGS = (0.0, -30.0, -90.0)
+# 0.30 m keeps the gate open (sigma = 0.99, the hardware local amplitude),
+# 2.0 m starts with the gate closed (|e_y|/L_d = 2), and 3.0 m lies beyond
+# the distance at which the ungated linear laws stay saturated and circle.
+TEST2_EY0S = (0.0, 0.30, 2.0, 3.0)
+TEST2_ETH0_DEGS = (0.0, -90.0)
 TEST2_CONDS = [
     (ey0, math.radians(deg))
     for ey0 in TEST2_EY0S
@@ -1290,13 +1294,18 @@ METHOD_COLORS = {"PP": "#d62728", "DPP": "#1f77b4",
 
 
 def write_test2_table(path_out, results):
-    """Write the compact method-comparison table for one path."""
+    """Write the compact method-comparison table for one path.
+
+    ``--`` marks metrics that are undefined by construction (the
+    initial-error-normalized transients when e_y(0) = 0); ``n/r`` marks
+    metrics whose event was not reached inside the evaluation interval.
+    """
     lines = [
-        r"\begin{tabular}{@{}lcrrrrrrr@{}}",
+        r"\begin{tabular}{@{}lrrrrrrr@{}}",
         r"\toprule",
-        r"Method & Eval. & $\bar e_y$ [m] & $\bar e_\theta$ [$^\circ$] & "
-        r"$T_m$ [s] & $T_r$ [s] & $T_s^{2\%}$ [s] & $M_{\rm os}$ [m] & "
-        r"$\kappa_{\max}$ [1/m] \\",
+        r"Method & $\bar e_y$ [m] & $\bar e_\theta$ [$^\circ$] & "
+        r"$T_r$ [s] & $T_s^{2\%}$ [s] & $M_{\rm os}$ [m] & "
+        r"$\kappa_{\max}$ [1/m] & Sat. [\%] \\",
         r"\midrule",
     ]
     first = True
@@ -1305,37 +1314,59 @@ def write_test2_table(path_out, results):
             lines.append(r"\addlinespace[1pt]")
         first = False
         deg = round(math.degrees(eth0))
+        undefined = abs(ey0) <= 1e-9
+        none = "--" if undefined else "n/r"
         lines.append(
-            r"\multicolumn{9}{@{}l}{$e_y(0)=" + f"{ey0:.2f}" +
+            r"\multicolumn{8}{@{}l}{$e_y(0)=" + f"{ey0:.2f}" +
             r"\,\mathrm{m},\ e_\theta(0)=" + f"{deg}" + r"^\circ$} \\")
         for method in TEST2_METHODS:
             m = results[(method, ey0, deg)]
             lines.append(" & ".join([
                 method,
-                "yes" if m.get("evaluation_completed") else "no",
                 f(m["bar_e_y"], 3),
                 f(m["bar_e_theta_deg"], 2),
-                f(m.get("T_m"), 2),
-                f(m.get("T_r"), 2),
-                f(m.get("T_s"), 2),
-                f(m.get("M_os"), 3),
+                f(m.get("T_r"), 2, none=none),
+                f(m.get("T_s"), 2, none=none),
+                f(m.get("M_os"), 3, none=none),
                 f(m["kappa_max"], 2),
+                f(100.0 * m["sat_ratio"], 1),
             ]) + r"\\")
     lines += [r"\bottomrule", r"\end{tabular}", ""]
     path_out.write_text("\n".join(lines), encoding="utf-8")
 
 
 def make_by_condition_panels(fig_dir, path, omega_n, zeta, ey0, eth0):
+    """Response panels clipped to the evaluation interval.
+
+    The time axes end at the largest evaluation-completion time among the
+    methods that completed the interval (runs that never complete it, e.g. a
+    permanently saturated circle, are shown over that same window).  The
+    trajectory panel covers the evaluation section of the reference path and
+    the initial position.
+    """
     runs = {}
+    t_evals = []
     for method in TEST2_METHODS:
-        _, arr, _ = run_metrics(path, method, omega_n, zeta, ey0, eth0)
+        m, arr, _ = run_metrics(path, method, omega_n, zeta, ey0, eth0)
         runs[method] = arr
+        if m.get("T_eval") is not None:
+            t_evals.append(float(m["T_eval"]) + arr[0, 0])
+    t_plot = max(t_evals) if t_evals else TMAX
+    runs = {
+        method: arr[arr[:, 0] <= t_plot + 1e-9] for method, arr in runs.items()
+    }
     stem = f"{path.key}_{cond_encode(ey0, round(math.degrees(eth0)))}"
     ref = path.sample(400)
+    starts = np.array([arr[0, 1:3] for arr in runs.values()])
+    margin = 0.35
+    x_lo = min(ref[:, 0].min(), starts[:, 0].min()) - margin
+    x_hi = max(ref[:, 0].max(), starts[:, 0].max()) + margin
+    y_lo = min(ref[:, 1].min(), starts[:, 1].min()) - margin
+    y_hi = max(ref[:, 1].max(), starts[:, 1].max()) + margin
 
-    def newfig():
+    def newfig(height=2.5):
         plt.rcParams.update({"font.size": 9})
-        return plt.subplots(figsize=(4.2, 2.5))
+        return plt.subplots(figsize=(4.2, height))
 
     def finish(fig, ax, name, legend=False):
         ax.grid(True, color="0.9", lw=0.6, ls=":")
@@ -1347,15 +1378,19 @@ def make_by_condition_panels(fig_dir, path, omega_n, zeta, ey0, eth0):
             fig.savefig(fig_dir / f"{stem}_{name}.{ext}", dpi=150)
         plt.close(fig)
 
-    # trajectory
-    fig, ax = newfig()
+    # trajectory (a square canvas when the bounding box is taller than wide,
+    # e.g. a far start beside the arc, so the equal-aspect plot stays legible)
+    tall = (y_hi - y_lo) > 1.2 * (x_hi - x_lo)
+    fig, ax = newfig(height=4.2 if tall else 2.5)
     ax.plot(ref[:, 0], ref[:, 1], "k--", lw=1.3, label="Reference")
     for method in TEST2_METHODS:
         arr = runs[method]
         ax.plot(arr[:, 1], arr[:, 2], color=METHOD_COLORS[method], lw=1.2,
                 label=method)
     ax.set_xlabel(r"$x$ [m]"); ax.set_ylabel(r"$y$ [m]")
-    ax.set_aspect("equal", adjustable="datalim")
+    ax.set_xlim(x_lo, x_hi)
+    ax.set_ylim(y_lo, y_hi)
+    ax.set_aspect("equal", adjustable="box")
     finish(fig, ax, "trajectory", legend=True)
 
     # sigma
@@ -1366,6 +1401,7 @@ def make_by_condition_panels(fig_dir, path, omega_n, zeta, ey0, eth0):
                 label=method)
     ax.set_xlabel(r"$t$ [s]"); ax.set_ylabel(r"$\sigma$")
     ax.set_ylim(-0.05, 1.05)
+    ax.set_xlim(0.0, t_plot)
     finish(fig, ax, "sigma")
 
     # kappa
@@ -1374,6 +1410,7 @@ def make_by_condition_panels(fig_dir, path, omega_n, zeta, ey0, eth0):
         arr = runs[method]
         ax.plot(arr[:, 0], arr[:, 7], color=METHOD_COLORS[method], lw=1.2)
     ax.set_xlabel(r"$t$ [s]"); ax.set_ylabel(r"$\kappa$ [1/m]")
+    ax.set_xlim(0.0, t_plot)
     finish(fig, ax, "kappa")
 
     # error_y
@@ -1383,6 +1420,7 @@ def make_by_condition_panels(fig_dir, path, omega_n, zeta, ey0, eth0):
         ax.plot(arr[:, 0], arr[:, 5], color=METHOD_COLORS[method], lw=1.2)
     ax.axhline(0.0, color="0.7", lw=0.6)
     ax.set_xlabel(r"$t$ [s]"); ax.set_ylabel(r"$e_y$ [m]")
+    ax.set_xlim(0.0, t_plot)
     finish(fig, ax, "error_y")
 
     # error_psi
@@ -1393,6 +1431,7 @@ def make_by_condition_panels(fig_dir, path, omega_n, zeta, ey0, eth0):
                 color=METHOD_COLORS[method], lw=1.2)
     ax.axhline(0.0, color="0.7", lw=0.6)
     ax.set_xlabel(r"$t$ [s]"); ax.set_ylabel(r"$e_\theta$ [deg]")
+    ax.set_xlim(0.0, t_plot)
     finish(fig, ax, "error_psi")
 
     # raw requested omega (the state update uses the separately stored clip)
@@ -1403,6 +1442,7 @@ def make_by_condition_panels(fig_dir, path, omega_n, zeta, ey0, eth0):
     ax.axhline(OMEGA_MAX, color="0.5", lw=0.7, ls=":")
     ax.axhline(-OMEGA_MAX, color="0.5", lw=0.7, ls=":")
     ax.set_xlabel(r"$t$ [s]"); ax.set_ylabel(r"$\omega_{\rm raw}$ [rad/s]")
+    ax.set_xlim(0.0, t_plot)
     finish(fig, ax, "omega")
 
 
@@ -1412,9 +1452,24 @@ def run_test2(table_dir, fig_dir, omega_n, zeta, ld=None):
     bycond_dir = fig_dir / "by_condition"
     bycond_dir.mkdir(parents=True, exist_ok=True)
     paths = {"straight": StraightPath(), "arc": ArcPath()}
+    dpp_l1, dpp_l2, dpp_a1, dpp_a2, _ = dpp_parameters(omega_n, zeta, ld=LD)
     json_out = {"meta": {"omega_n": omega_n, "zeta": zeta, "ld": LD,
                          "omega_max": OMEGA_MAX, "methods": TEST2_METHODS,
-                         "L2_dpp": LD_DPP2, "dt": DT,
+                         "dpp": {"definition": (
+                             "vehicle-axis preview points; e_p,i = lateral "
+                             "deviation of the point from the path; "
+                             "kappa = -(a1 e_p1 + a2 e_p2); Wang-Mouri "
+                             "pattern 3 with L1 = far_factor * L_d"),
+                                 "far_factor": DPP_FAR_FACTOR,
+                                 "L1": dpp_l1, "L2": dpp_l2,
+                                 "a1": dpp_a1, "a2": dpp_a2,
+                                 "a1L1sq_plus_a2L2sq": (
+                                     dpp_a1 * dpp_l1**2 + dpp_a2 * dpp_l2**2)},
+                         "arc": {"radius_m": ARC_R, "turn": ARC_TURN,
+                                 "control_angle_deg": math.degrees(ARC_ANGLE),
+                                 "eval_angle_deg": math.degrees(
+                                     ARC_GOAL / ARC_R)},
+                         "dt": DT,
                          "control_rate_hz": 1.0 / DT,
                          "v0": V0, "v_epsilon": V_EPSILON,
                          "acceleration_model": None,
@@ -1626,7 +1681,6 @@ def main(
           f"carrot_rule = {CARROT_RULE}")
 
     test1 = run_test1(table_dir, fig_dir)
-    selected = test1["selected"]
     print("\n*** TEST 1 frozen grid ***")
     for ld in GRID_LDS:
         block = test1["blocks"][_ld_tag(ld)]
@@ -1634,31 +1688,16 @@ def main(
               f"omega_n_max={block['omega_n_max']:.6f}, "
               f"negative_control_dev="
               f"{block['pp_negative_control_max_dev']:.2e}")
-    print(f"selected: Ld={selected['ld']:.2f}, "
-          f"omega_n={selected['omega_n']:.6f}, "
-          f"zeta={selected['zeta']:.6f} "
-          f"(T_s2%={selected['T_s_02']:.3f} s)")
 
-    # The chapter-6 hardware arms and the test-2 operating point were frozen
-    # on this cell; fail loudly if a rerun of the grid selects differently.
-    if not (
-        math.isclose(selected["ld"], DAMPING_LD, abs_tol=1e-9)
-        and math.isclose(selected["omega_n"], DAMPING_OMEGA_N, abs_tol=1e-9)
-        and math.isclose(selected["zeta"], 1.0, abs_tol=1e-9)
-    ):
-        raise RuntimeError(
-            "test-1 grid selection deviates from the frozen operating point "
-            f"(L_d={DAMPING_LD}, omega_n={DAMPING_OMEGA_N:.6f}, zeta=1): "
-            f"got {selected}"
-        )
-
-    run_test2(
-        table_dir,
-        fig_dir,
-        selected["omega_n"],
-        selected["zeta"],
-        ld=selected["ld"],
+    print("\n*** TEST 2 frozen operating point ***")
+    dpp_l1, dpp_l2, dpp_a1, dpp_a2, _ = dpp_parameters(
+        TEST2_OMEGA_N, TEST2_ZETA, ld=TEST2_LD
     )
+    print(f"Ld={TEST2_LD:.2f}, omega_n={TEST2_OMEGA_N:.6f}, "
+          f"zeta={TEST2_ZETA:.1f}; DPP L1={dpp_l1:.3f} m, L2={dpp_l2:.3f} m, "
+          f"a1={dpp_a1:.3f}, a2={dpp_a2:.3f} 1/m^2 "
+          f"(a1L1^2+a2L2^2={dpp_a1 * dpp_l1**2 + dpp_a2 * dpp_l2**2:.6f})")
+    run_test2(table_dir, fig_dir, TEST2_OMEGA_N, TEST2_ZETA, ld=TEST2_LD)
     trace_root = args.out_root / sub / "hw_reference_traces"
     if args.tag:
         trace_root = trace_root / args.tag

@@ -7,7 +7,7 @@ from ecpp.controllers.dpp import calc_dpp_parameters
 from ecpp.simulation.runner import build_scenarios, nominal_variants
 
 
-def test_dpp_previews_are_ld_and_twice_ld():
+def test_dpp_far_preview_is_twice_ld_and_near_preview_follows_the_paper():
     config = EcppConfig(v_max=0.5)
     variant_config = config_for_variant(
         config,
@@ -17,9 +17,12 @@ def test_dpp_previews_are_ld_and_twice_ld():
         gate_mode="off",
     )
     assert math.isclose(variant_config.dpp_gain_speed, config.v_max)
-    l1, l2, _, _, v_gain = calc_dpp_parameters(variant_config)
-    assert math.isclose(l1, 1.2)
-    assert math.isclose(l2, 2.4)
+    l1, l2, a1, a2, v_gain = calc_dpp_parameters(variant_config)
+    k_y = (1.0 / v_gain) ** 2
+    k_psi = 2.0 / v_gain
+    assert math.isclose(l1, 2.4)
+    assert math.isclose(l2, (2.0 - l1 * k_psi) / (k_psi - l1 * k_y))
+    assert math.isclose(a1 * l1**2 + a2 * l2**2, 2.0)
     assert math.isclose(v_gain, 0.55)
 
 

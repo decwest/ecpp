@@ -32,8 +32,9 @@ def test_path_tracking_keeps_raw_request_and_uses_instantaneous_clip():
 
 
 def test_direct_dpp_tracking_uses_variant_lookahead_not_config_metadata():
-    path = straight_line_path(length=2.0, num_points=3)
-    config = EcppConfig(lookahead_m=1.2, v_max=0.5)
+    path = straight_line_path(length=4.0, num_points=3)
+    # dpp_omega_n = 1.5 keeps the paper's near preview distance positive.
+    config = EcppConfig(lookahead_m=1.2, v_max=0.5, dpp_omega_n=1.5)
     scenario = PathScenario("straight", "Straight", path, max_steps=0)
     pose = np.array([0.0, 0.1, 0.0])
     condition = InitialCondition("test", 0.1, 0.0, pose)
@@ -41,7 +42,9 @@ def test_direct_dpp_tracking_uses_variant_lookahead_not_config_metadata():
 
     result = run_path_tracking(scenario, condition, variant, config)
 
-    np.testing.assert_allclose(result.lookahead[0], [0.5, 0.0])
+    # The far preview point lies 2 L_d ahead on the vehicle axis, with the
+    # variant's L_d = 0.5 m rather than the config's 1.2 m.
+    np.testing.assert_allclose(result.lookahead[0], [1.0, 0.1])
 
 
 def test_initial_condition_ignores_incorrect_stored_path_orientation():

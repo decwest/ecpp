@@ -44,8 +44,8 @@ fixed_contract:
   velocity_gain: "v_g = |v| + 0.05"
   lookahead: continuous_polyline_arc_length
   intrinsic_gain_distance: nominal_L_d
-  dpp_previews: "L_1 = L_d; L_2 = 2 L_d"
-  python_state_update_clip_radps: 1.0
+  dpp_previews: "vehicle-axis points L_1 = 2 L_d, L_2 from the Wang-Mouri constant-curvature condition (2026-09-08)"
+  python_state_update_clip_radps: 1.5
   nav2_internal_raw_clip: false
   paper_error_filter_tau: 0.0
   omega_n_label: configured_value
