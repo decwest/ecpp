@@ -12,9 +12,9 @@ Frozen conditions
 -----------------
 * Engine: the chapter-5 fixed-speed unicycle (``tracking.simulate_fixed_speed``)
   with v0 = 0.5 m/s, 30 Hz, +/-1.5 rad/s state-update clip, v_epsilon = 0.05.
-* Path: 3 m straight -> R = 3.0 m left arc over 90 deg (the Test-2 radius)
-  -> 6 m straight; the evaluation ends 4 m after the arc exit so the carrot
-  never pins at the end.
+* Path: 2 m straight -> R = 1.0 m left arc over 90 deg (the corner radius of
+  the hardware route) -> 8 m straight; the evaluation ends 6 m after the arc
+  exit so the carrot never pins at the end.
 * Initial condition (e_y(0), e_psi(0)) = (0, 0): the robot starts on the
   path, so every deviation is forced by the curvature transitions.
 * Arms: PP and ECPP at L_d in {0.5, 1.0} m.  ECPP uses the Test-2 / hardware
@@ -23,15 +23,19 @@ Frozen conditions
 
 Metrics
 -------
-d_lead: distance before the arc entry at which |kappa_des| first exceeds 10 %
-of the arc curvature (preview).  e_y_in: maximum signed lateral error from
-0.5 m before the entry to the exit (the inside of a left turn is +e_y);
-T_rec_in: time from that peak until |e_y| has fallen to 10 % of it, before the
-exit (local response).  e_y_out: minimum signed lateral error from 0.5 m before
-the exit to the evaluation end (outside is -e_y); T_rec_out: time from that
-peak until |e_y| has fallen to 10 % of it.  kappa_max and sat_ratio are kept
-in the JSON.  The feedforward curvature kappa_prev(s) of a zero-error carrot
-L_d ahead is stored for the figure.
+The common chapter-5 metrics, with the reference amplitude taken as the peak
+deviation after the curvature change: e_y_in is the maximum signed lateral
+error from 0.5 m before the entry to the exit (the inside of the left turn is
++e_y); e_y_out is the minimum signed lateral error from 0.5 m before the exit
+to the evaluation end (the outside is -e_y); T_s_02_out is the settling time
+from the exit peak until |e_y| enters and stays within 2 % of that peak up to
+the evaluation end; bar_e_y and bar_e_theta_deg are the mean absolute errors
+over the evaluation interval; N_zc_exit counts the path crossings of e_y after
+the exit peak (1 mm dead band); kappa_max and sat_ratio are the unclipped
+curvature maximum and the saturation ratio.  d_lead (first |kappa_des| >= 10 %
+of the arc curvature before the entry) stays in the JSON for the text, and the
+feedforward curvature kappa_prev(s) of a zero-error carrot L_d ahead is stored
+for the figure.
 
 Writes to ``generated_preview/`` by default; ``--apply`` switches to
 ``generated/``.  Does not edit sections/*.tex.
@@ -71,11 +75,11 @@ LOOKAHEADS = (0.5, 1.0)
 METHODS = ("PP", "ECPP")
 ARMS = tuple((method, ld) for method in METHODS for ld in LOOKAHEADS)
 
-LEAD_IN = 3.0                      # m straight before the arc
-ARC_R = ia.ARC_R                   # 3.0 m, identical to the Test-2 arc
+LEAD_IN = 2.0                      # m straight before the arc
+ARC_R = 1.0                        # m, the corner radius of the hardware route (exp. 2)
 ARC_ANGLE = math.pi / 2.0          # left 90 deg turn, no transition curve
-EXIT_CONTROL = 6.0                 # m of straight after the arc (control path)
-EXIT_EVAL = 4.0                    # m of straight after the arc (evaluation)
+EXIT_CONTROL = 8.0                 # m of straight after the arc (control path)
+EXIT_EVAL = 6.0                    # m of straight after the arc (evaluation)
 ARC_VERTEX_SPACING = 0.005         # m, as in ieee_access.ArcPath
 
 S_ENTRY = LEAD_IN
@@ -83,15 +87,17 @@ S_EXIT = LEAD_IN + ARC_R * ARC_ANGLE
 GOAL = S_EXIT + EXIT_EVAL
 ENTRY_MARGIN = 0.5                 # m before the entry where the in-cut may start
 EXIT_MARGIN = 0.5                  # m before the exit where the out-flow may start
-RECOVERY_FRACTION = 0.1            # of the peak
-LEAD_SEARCH_START = S_ENTRY - 2.0  # m
-LEAD_THRESHOLD_FRACTION = 0.1      # of the arc curvature
+SETTLING_FRACTION = 0.02           # T_s band, of the exit peak (chapter-5 convention)
+ZC_DEADBAND = 0.001                # m, dead band of the path-crossing count
+LEAD_SEARCH_START = S_ENTRY - 1.5  # m
+LEAD_THRESHOLD_FRACTION = 0.1      # of the arc curvature (JSON only)
 FIGURE_STEM = "sim_test3_preview_decoupling"
 TABLE_STEM = "sim_test3_results"
 METRICS_STEM = "sim_test3_metrics"
-KAPPA_PANEL_WINDOW = (S_ENTRY - 2.0, S_ENTRY + 1.5)
-XY_PANEL_LIMITS = ((1.0, 6.5), (-0.5, 5.0))
-XY_INSET_LIMITS = ((2.7, 3.9), (-0.06, 0.24))
+KAPPA_PANEL_WINDOW = (S_ENTRY - 1.5, S_EXIT + 1.0)
+XY_PANEL_LIMITS = ((0.8, 3.6), (-0.4, 3.4))
+XY_INSET_LIMITS = ((2.35, 3.35), (0.2, 1.7))
+XY_INSET_POSITION = [0.13, 0.46, 0.50, 0.50]   # axes fraction, upper-left void
 
 
 class StraightArcStraightPath:
@@ -183,16 +189,34 @@ def _run(path_polyline, path, method, ld):
     )
 
 
-def _recovery_time(trace, peak_index, s_limit):
-    """Time from the peak until |e_y| drops to RECOVERY_FRACTION of it."""
+def _settling_time(trace, peak_index, s_limit, fraction=SETTLING_FRACTION):
+    """Time from the peak until |e_y| enters the band and stays there to s_limit."""
     e = trace.e_y
     s = trace.path_s
-    band = RECOVERY_FRACTION * abs(e[peak_index])
-    later = np.arange(len(e)) > peak_index
-    recovered = np.where(later & (s <= s_limit) & (np.abs(e) <= band))[0]
-    if not len(recovered):
+    band = fraction * abs(e[peak_index])
+    idx = np.where((np.arange(len(e)) > peak_index) & (s <= s_limit))[0]
+    if not len(idx):
         return None
-    return float(trace.time[recovered[0]] - trace.time[peak_index])
+    inside = np.abs(e[idx]) <= band
+    if not inside[-1]:
+        return None
+    outside = np.where(~inside)[0]
+    k = idx[outside[-1] + 1] if len(outside) else idx[0]
+    return float(trace.time[k] - trace.time[peak_index])
+
+
+def _path_crossings(trace, start_index, deadband=ZC_DEADBAND):
+    """Sign reversals of e_y after start_index, ignoring |e_y| <= deadband."""
+    sign = 0
+    count = 0
+    for value in trace.e_y[start_index:]:
+        if abs(value) <= deadband:
+            continue
+        current = 1 if value > 0.0 else -1
+        if sign and current != sign:
+            count += 1
+        sign = current
+    return count
 
 
 def transition_metrics(trace, path):
@@ -209,13 +233,13 @@ def transition_metrics(trace, path):
     i_in = int(entry[np.argmax(e[entry])])
     m["e_y_in"] = float(e[i_in])
     m["s_in"] = float(s[i_in])
-    m["T_rec_in"] = _recovery_time(trace, i_in, path.s_exit)
 
     exit_ = np.where((s >= path.s_exit - EXIT_MARGIN) & (s <= path.goal))[0]
     i_out = int(exit_[np.argmin(e[exit_])])
     m["e_y_out"] = float(e[i_out])
     m["s_out"] = float(s[i_out])
-    m["T_rec_out"] = _recovery_time(trace, i_out, path.goal)
+    m["T_s_02_out"] = _settling_time(trace, i_out, path.goal)
+    m["N_zc_exit"] = int(_path_crossings(trace, i_out))
     return m
 
 
@@ -232,6 +256,7 @@ def arm_metrics(trace, path, method, ld):
     }
     m.update(transition_metrics(trace, path))
     m["bar_e_y"] = float(np.mean(np.abs(trace.e_y[evalmask])))
+    m["bar_e_theta_deg"] = float(np.degrees(np.mean(np.abs(trace.e_psi[evalmask]))))
     m["kappa_max"] = float(np.max(np.abs(trace.curvature[evalmask])))
     m["sat_ratio"] = float(np.mean(np.abs(trace.omega_raw[evalmask]) >= OMEGA_MAX))
     m["max_abs_ey"] = float(np.max(np.abs(trace.e_y)))
@@ -269,21 +294,24 @@ def feedforward_profiles(path, window=KAPPA_PANEL_WINDOW, spacing=0.01):
 # ---------------------------------------------------------------------------
 def write_table(path_out, metrics):
     lines = [
-        r"\begin{tabular}{@{}lrrrrrr@{}}",
+        r"\begin{tabular}{@{}lrrrrrrrr@{}}",
         r"\toprule",
-        r"Method & $L_d$ [m] & $d_{\rm lead}$ [m] & $e_{y,\rm in}$ [m] & "
-        r"$T_{\rm rec,in}$ [s] & $e_{y,\rm out}$ [m] & $T_{\rm rec,out}$ [s] \\",
+        r"Method & $L_d$ [m] & $e_{y,\rm in}$ [m] & $e_{y,\rm out}$ [m] & "
+        r"$T_s^{2\%}$ [s] & $\bar e_y$ [m] & $\bar e_\theta$ [$^\circ$] & "
+        r"$N_{zc}$ & $\kappa_{\max}$ [1/m] \\",
         r"\midrule",
     ]
     for m in metrics:
         lines.append(" & ".join([
             m["method"],
             f"{m['ld']:.1f}",
-            ia.f(m["d_lead"], 2, none="n/r"),
-            ia.f(m["e_y_in"], 4),
-            ia.f(m["T_rec_in"], 2, none="n/r"),
-            ia.f(m["e_y_out"], 4),
-            ia.f(m["T_rec_out"], 2, none="n/r"),
+            ia.f(m["e_y_in"], 3),
+            ia.f(m["e_y_out"], 3),
+            ia.f(m["T_s_02_out"], 2, none="n/r"),
+            ia.f(m["bar_e_y"], 3),
+            ia.f(m["bar_e_theta_deg"], 2),
+            str(m["N_zc_exit"]),
+            ia.f(m["kappa_max"], 2),
         ]) + r"\\")
     lines += [r"\bottomrule", r"\end{tabular}", ""]
     path_out.write_text("\n".join(lines), encoding="utf-8")
@@ -315,8 +343,8 @@ def make_figure(fig_dir, path, traces):
     ax_xy.set_aspect("equal", adjustable="box")
     ax_xy.set_xlabel(r"$x$ [m]")
     ax_xy.set_ylabel(r"$y$ [m]")
-    ax_xy.set_title("(a) Trajectories (inset: arc entry)", fontsize=8, loc="left")
-    axins = ax_xy.inset_axes([0.14, 0.58, 0.60, 0.36])
+    ax_xy.set_title("(a) Trajectories (inset: corner)", fontsize=8, loc="left")
+    axins = ax_xy.inset_axes(XY_INSET_POSITION)
     axins.plot(ref[:, 0], ref[:, 1], "k--", lw=0.8)
     for method, ld in ARMS:
         trace = traces[arm_key(method, ld)]
@@ -361,9 +389,9 @@ def make_figure(fig_dir, path, traces):
     ax_k.set_xlim(*KAPPA_PANEL_WINDOW)
     ax_k.set_xlabel(r"Reference arc length $s$ [m]")
     ax_k.set_ylabel(r"$\kappa$ [1/m]")
-    ax_k.set_title("(c) Curvature command (entry)",
+    ax_k.set_title("(c) Curvature command (corner)",
                    fontsize=8, loc="left")
-    ax_k.legend(fontsize=6.0, loc="upper left", framealpha=0.85)
+    ax_k.legend(fontsize=5.6, loc="upper left", framealpha=0.85)
     for ax in (ax_xy, ax_e, ax_k):
         ax.grid(True, color="0.9", lw=0.6, ls=":")
         ax.tick_params(labelsize=7)
@@ -432,19 +460,21 @@ def run_test3(table_dir, fig_dir, trace_dir):
             "arc_vertex_spacing_m": ARC_VERTEX_SPACING,
         },
         "metric_definitions": {
+            "e_y_in": "max e_y on [s_entry - entry_margin, s_exit] (inside of the left turn is +)",
+            "e_y_out": "min e_y on [s_exit - exit_margin, goal] (outside is -)",
+            "T_s_02_out": ("time from the e_y_out peak until |e_y| enters and stays "
+                           "within settling_fraction * |e_y_out| up to the goal"),
+            "bar_e_y": "mean |e_y| over [0, goal]",
+            "bar_e_theta_deg": "mean |e_theta| over [0, goal], degrees",
+            "N_zc_exit": "sign reversals of e_y after the e_y_out peak, |e_y| <= zc_deadband ignored",
             "d_lead": ("s_entry minus the first s (from lead_search_start) at "
-                       "which |kappa_des| >= lead_threshold_fraction / R"),
-            "e_y_in": "max e_y on [s_entry - entry_margin, s_exit]",
-            "T_rec_in": ("time from the e_y_in peak until |e_y| <= "
-                         "recovery_fraction * e_y_in, before s_exit"),
-            "e_y_out": "min e_y on [s_exit - exit_margin, goal]",
-            "T_rec_out": ("time from the e_y_out peak until |e_y| <= "
-                          "recovery_fraction * |e_y_out|, before goal"),
+                       "which |kappa_des| >= lead_threshold_fraction / R; JSON only"),
             "lead_search_start_m": LEAD_SEARCH_START,
             "lead_threshold_fraction_of_arc_curvature": LEAD_THRESHOLD_FRACTION,
             "entry_margin_m": ENTRY_MARGIN,
             "exit_margin_m": EXIT_MARGIN,
-            "recovery_fraction": RECOVERY_FRACTION,
+            "settling_fraction": SETTLING_FRACTION,
+            "zc_deadband_m": ZC_DEADBAND,
             "sign_convention": "e_y > 0 is left of the path = inside of the left turn",
         },
         "arms": metrics,
@@ -498,15 +528,18 @@ def main(
           f"initial condition = {COND}")
     out, figures = run_test3(table_dir, fig_dir, trace_dir)
     print("\n*** TEST 3 preview decoupling ***")
-    print(f"{'arm':14s} {'d_lead':>6s} {'e_y,in':>7s} {'Trec,in':>7s} "
-          f"{'e_y,out':>7s} {'Trec,out':>8s} {'kmax':>5s} {'sat':>4s}")
+    print(f"{'arm':14s} {'d_lead':>6s} {'e_y,in':>7s} {'e_y,out':>7s} "
+          f"{'Ts2%out':>7s} {'bar_ey':>7s} {'bar_eth':>7s} {'Nzc':>3s} "
+          f"{'kmax':>5s} {'sat':>4s}")
     for m in out["arms"]:
         print(f"{m['method'] + ' Ld=' + str(m['ld']):14s} "
               f"{ia.f(m['d_lead'], 2, none='n/r'):>6s} "
               f"{ia.f(m['e_y_in'], 4):>7s} "
-              f"{ia.f(m['T_rec_in'], 2, none='n/r'):>7s} "
               f"{ia.f(m['e_y_out'], 4):>7s} "
-              f"{ia.f(m['T_rec_out'], 2, none='n/r'):>8s} "
+              f"{ia.f(m['T_s_02_out'], 2, none='n/r'):>7s} "
+              f"{ia.f(m['bar_e_y'], 4):>7s} "
+              f"{ia.f(m['bar_e_theta_deg'], 2):>7s} "
+              f"{m['N_zc_exit']:3d} "
               f"{m['kappa_max']:5.2f} {m['sat_ratio']:4.2f}")
     for path_out in figures:
         print(f"Generated {path_out}")

@@ -312,28 +312,28 @@ def test_frozen_test3_conditions_are_exact():
     assert test3_preview.LOOKAHEADS == pytest.approx((0.5, 1.0))
     assert test3_preview.METHODS == ("PP", "ECPP")
     assert test3_preview.ARMS == (("PP", 0.5), ("PP", 1.0), ("ECPP", 0.5), ("ECPP", 1.0))
-    assert test3_preview.LEAD_IN == pytest.approx(3.0)
-    assert test3_preview.ARC_R == pytest.approx(3.0)
+    assert test3_preview.LEAD_IN == pytest.approx(2.0)
+    assert test3_preview.ARC_R == pytest.approx(1.0)
     assert test3_preview.ARC_ANGLE == pytest.approx(np.pi / 2.0)
-    assert test3_preview.EXIT_CONTROL == pytest.approx(6.0)
-    assert test3_preview.EXIT_EVAL == pytest.approx(4.0)
-    assert test3_preview.RECOVERY_FRACTION == pytest.approx(0.1)
+    assert test3_preview.EXIT_CONTROL == pytest.approx(8.0)
+    assert test3_preview.EXIT_EVAL == pytest.approx(6.0)
+    assert test3_preview.SETTLING_FRACTION == pytest.approx(0.02)
     assert test3_preview.ENTRY_MARGIN == pytest.approx(0.5)
     assert test3_preview.EXIT_MARGIN == pytest.approx(0.5)
-    assert test3_preview.LEAD_SEARCH_START == pytest.approx(1.0)
+    assert test3_preview.LEAD_SEARCH_START == pytest.approx(0.5)
     path = test3_preview.StraightArcStraightPath()
-    assert path.s_entry == pytest.approx(3.0)
-    assert path.s_exit == pytest.approx(3.0 + 1.5 * np.pi)
-    assert path.goal == pytest.approx(path.s_exit + 4.0)
-    assert path.length == pytest.approx(path.s_exit + 6.0)
-    np.testing.assert_allclose(path.point(path.s_exit), [6.0, 3.0], atol=1e-12)
+    assert path.s_entry == pytest.approx(2.0)
+    assert path.s_exit == pytest.approx(2.0 + 0.5 * np.pi)
+    assert path.goal == pytest.approx(path.s_exit + 6.0)
+    assert path.length == pytest.approx(path.s_exit + 8.0)
+    np.testing.assert_allclose(path.point(path.s_exit), [3.0, 1.0], atol=1e-12)
     assert path.heading(path.s_exit) == pytest.approx(np.pi / 2.0)
-    np.testing.assert_allclose(path.point(path.goal), [6.0, 7.0], atol=1e-12)
+    np.testing.assert_allclose(path.point(path.goal), [3.0, 7.0], atol=1e-12)
     # The zero-error feedforward is exactly the arc curvature once the carrot
     # and the robot are both on the arc, and zero on the lead-in straight.
-    assert path.feedforward_curvature(4.5, 1.0) == pytest.approx(1.0 / 3.0)
-    assert path.feedforward_curvature(1.0, 1.0) == pytest.approx(0.0)
-    assert path.feedforward_curvature(2.5, 1.0) > 0.0
+    assert path.feedforward_curvature(2.3, 1.0) == pytest.approx(1.0)
+    assert path.feedforward_curvature(0.5, 1.0) == pytest.approx(0.0)
+    assert path.feedforward_curvature(1.5, 1.0) > 0.0
 
 
 def test_test3_preview_follows_ld_and_recovery_follows_the_gains():
@@ -346,7 +346,8 @@ def test_test3_preview_follows_ld_and_recovery_follows_the_gains():
         assert m["sat_ratio"] == 0.0
         assert m["goal_reached"]
         assert m["d_lead"] is not None
-        assert m["T_rec_in"] is not None and m["T_rec_out"] is not None
+        assert m["T_s_02_out"] is not None
+        assert m["N_zc_exit"] >= 0
         assert m["e_y_in"] > 0.0 > m["e_y_out"]
     # Preview: the steering lead follows L_d for both methods (about 0.6 L_d).
     for method in ("PP", "ECPP"):
@@ -354,9 +355,9 @@ def test_test3_preview_follows_ld_and_recovery_follows_the_gains():
         assert long["d_lead"] > 1.5 * short["d_lead"]
         assert long["e_y_in"] > short["e_y_in"]
         assert long["e_y_out"] < short["e_y_out"]
-    # Local response: PP's exit recovery scales with L_d, ECPP's does not.
-    pp_ratio = by_key["PP_ld1p00"]["T_rec_out"] / by_key["PP_ld0p50"]["T_rec_out"]
-    ecpp_ratio = by_key["ECPP_ld1p00"]["T_rec_out"] / by_key["ECPP_ld0p50"]["T_rec_out"]
+    # Local response: PP's settling after the exit scales with L_d, ECPP's does not.
+    pp_ratio = by_key["PP_ld1p00"]["T_s_02_out"] / by_key["PP_ld0p50"]["T_s_02_out"]
+    ecpp_ratio = by_key["ECPP_ld1p00"]["T_s_02_out"] / by_key["ECPP_ld0p50"]["T_s_02_out"]
     assert pp_ratio > 1.8
     assert abs(ecpp_ratio - 1.0) < 0.15
 
@@ -375,7 +376,7 @@ def test_test3_cli_preview_and_apply(tmp_path):
     assert (applied / "traces" / "sim_test3_PP_ld0p50.csv").is_file()
     table = (applied / "tables" / "sim_test3_results.tex").read_text()
     assert "\\bottomrule" in table and table.count("\nPP &") == 2 and table.count("\nECPP &") == 2
-    assert "$T_{\\rm rec,in}$" in table and "$T_{\\rm rec,out}$" in table
+    assert "$T_s^{2\\%}$" in table and "$N_{zc}$" in table
     with pytest.raises(SystemExit):
         test3_preview.main(["--out-root", str(tmp_path), "--apply", "--tag", "x"])
 

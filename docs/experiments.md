@@ -68,27 +68,30 @@ Test 2 (method and gate comparison, redesigned 2026-09-08):
   the largest completion time among the methods that completed it)
 
 Test 3 (preview range versus local response, straight-arc-straight path,
-redesigned 2026-09-08):
+redesigned 2026-09-12 around the hardware-route corner):
 
 - generated with `uv run python -m ecpp.paper test3-preview --out-root ...`
-- path: 3 m straight -> left arc `R = 3 m` over 90 deg without a transition
-  curve (the Test-2 radius) -> 6 m straight; the evaluation ends 4 m after
-  the arc exit (`s_entry = 3.0 m`, `s_exit = 3 + 3 pi / 2 = 7.712 m`,
-  `goal = 11.712 m`)
+- path: 2 m straight -> left arc `R = 1.0 m` over 90 deg without a transition
+  curve (the corner radius of the hardware route) -> 8 m straight; the
+  evaluation ends 6 m after the arc exit (`s_entry = 2.0 m`,
+  `s_exit = 2 + pi / 2 = 3.571 m`, `goal = 9.571 m`)
 - initial condition `(e_y(0), e_psi(0)) = (0, 0)`: every deviation is forced
   by the curvature transitions
 - arms: PP and ECPP at `L_d = {0.5, 1.0} m`; ECPP uses the Test-2 design
   point `omega_n = omega_n_max(1.0) = 1.132872 rad/s`, `zeta = 1` for both
   lookaheads (inside the rate bound for both; `lambda = 0.73` at 0.5 m)
-- metrics: steering lead `d_lead` (first `|kappa_des| >= 0.1 / R` before the
-  entry, searched from 1.0 m); entry in-cut `e_y,in = max e_y` on
-  `[entry - 0.5 m, exit]` (left turn: inside is `+e_y`) and the recovery
-  time `T_rec,in` from that peak until `|e_y|` falls to 10 % of it (before
-  the exit); exit out-flow `e_y,out = min e_y` on `[exit - 0.5 m, goal]` and
-  `T_rec,out` likewise; `kappa_max` and the saturation ratio stay in the
+- metrics (the common chapter-5 set, reference amplitude = the peak after the
+  curvature change): entry in-cut `e_y,in = max e_y` on `[entry - 0.5 m, exit]`
+  (left turn: inside is `+e_y`); exit out-flow `e_y,out = min e_y` on
+  `[exit - 0.5 m, goal]`; `T_s^2%` from the exit peak until `|e_y|` enters and
+  stays within 2 % of it up to the goal; `bar_e_y`, `bar_e_theta`; `N_zc`
+  after the exit peak (1 mm dead band); `kappa_max`; the saturation ratio
+  and the steering lead `d_lead` (first `|kappa_des| >= 0.1 / R`) stay in the
   JSON; the zero-error feedforward `kappa_prev(s)` per `L_d` is stored for
   the figure
-- 2 methods x 2 lookaheads = 4 runs
+- 2 methods x 2 lookaheads = 4 runs; with `L_d = 1.0 m` the robot and the
+  carrot are both on the 1.57 m arc for only 0.57 m, so the corner is one
+  blended transient (the entry recovery is therefore not reported)
 
 Unified metric vocabulary (chapters 5 and 6): MAE lateral / heading error,
 `T_r` (90->10%), `T_s` (2% band in simulation, 10% band on hardware),

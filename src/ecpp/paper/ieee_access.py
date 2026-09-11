@@ -1038,7 +1038,7 @@ def _run_test1_grid_block(ld, trace_dir):
     ey0, eth0 = GRID_COND
     pp_cfg = PP_OMEGA_N
     bound = OMEGA_N_MAX
-    pp_arr, _ = simulate(
+    pp_metric, pp_arr, _ = run_metrics(
         path, "PP", pp_cfg, 1.0 / math.sqrt(2.0), ey0, eth0
     )
     rows = []
@@ -1101,6 +1101,7 @@ def _run_test1_grid_block(ld, trace_dir):
         "omega_n_max": bound,
         "lambda_max": bound / pp_cfg,
         "pp_negative_control_max_dev": control_dev,
+        "pp_row": dict(pp_metric),
         "rows": rows,
     }
     return block, traces
@@ -1129,9 +1130,21 @@ def _write_test1_grid_table(path_out, blocks):
             r"\multicolumn{9}{@{}l}{$L_d=" + f"{ld:.1f}"
             + r"\,\mathrm{m}$:\ $\omega_{n,{\rm PP}}^{\rm cfg}="
             + f"{block['omega_n_pp_configured']:.3f}"
-            + r"$, $\omega_{n,\max}=" + f"{block['omega_n_max']:.3f}"
+            + r"$, $\omega_{n,\max}^{\rm cfg}=" + f"{block['omega_n_max']:.3f}"
             + r"\,\mathrm{rad/s}$} \\"
         )
+        pp = block.get("pp_row")
+        if pp is not None:
+            lines.append(" & ".join([
+                r"\multicolumn{3}{@{}l}{PP}",
+                f(pp.get("bar_e_y"), 3),
+                f(pp.get("bar_e_theta_deg"), 2),
+                f(pp.get("T_r"), 2, none="n/r"),
+                f(pp.get("T_s_02"), 2, none="n/r"),
+                f(pp.get("M_os"), 4),
+                f(pp.get("kappa_max"), 2),
+            ]) + r"\\")
+            lines.append(r"\addlinespace[1pt]")
         previous_omega = None
         for row in block["rows"]:
             if previous_omega is not None and row["omega_n"] != previous_omega:
@@ -1404,11 +1417,13 @@ def make_by_condition_panels(fig_dir, path, omega_n, zeta, ey0, eth0):
     ax.set_xlim(0.0, t_plot)
     finish(fig, ax, "sigma")
 
-    # kappa
+    # kappa (unclipped command; dotted lines = the rate budget kappa_bar = omega_max / v0)
     fig, ax = newfig()
     for method in TEST2_METHODS:
         arr = runs[method]
         ax.plot(arr[:, 0], arr[:, 7], color=METHOD_COLORS[method], lw=1.2)
+    ax.axhline(OMEGA_MAX / V0, color="0.5", lw=0.7, ls=":")
+    ax.axhline(-OMEGA_MAX / V0, color="0.5", lw=0.7, ls=":")
     ax.set_xlabel(r"$t$ [s]"); ax.set_ylabel(r"$\kappa$ [1/m]")
     ax.set_xlim(0.0, t_plot)
     finish(fig, ax, "kappa")
