@@ -1450,54 +1450,57 @@ def make_by_condition_panels(fig_dir, path, omega_n, zeta, ey0, eth0):
     y_lo = min(ref[:, 1].min(), starts[:, 1].min()) - margin
     y_hi = max(ref[:, 1].max(), starts[:, 1].max()) + margin
 
-    def newfig(height=2.5):
-        plt.rcParams.update({"font.size": 9})
-        return plt.subplots(figsize=(4.2, height))
+    # One small panel per quantity, sized for a 0.24-textwidth minipage so
+    # that the manuscript can put a LaTeX sub-caption under each and a shared
+    # legend strip (test2_legend.pdf) above the row.
+    def newfig(height=1.35):
+        plt.rcParams.update({"font.size": 7})
+        return plt.subplots(figsize=(1.8, height))
 
-    def finish(fig, ax, name, legend=False):
+    def finish(fig, ax, name):
         ax.grid(True, color="0.9", lw=0.6, ls=":")
-        ax.tick_params(labelsize=8)
-        if legend:
-            ax.legend(fontsize=6.5, loc="best", framealpha=0.85)
-        fig.tight_layout(pad=0.3)
+        ax.tick_params(labelsize=6, pad=1.5)
+        ax.xaxis.label.set_size(7)
+        ax.yaxis.label.set_size(7)
+        fig.tight_layout(pad=0.25)
         for ext in ("pdf", "png"):
-            fig.savefig(fig_dir / f"{stem}_{name}.{ext}", dpi=150)
+            fig.savefig(fig_dir / f"{stem}_{name}.{ext}", dpi=300,
+                        bbox_inches="tight", pad_inches=0.02)
         plt.close(fig)
 
     _write_condition_row(fig_dir, stem, runs, ref, (x_lo, x_hi), (y_lo, y_hi),
                          t_plot)
+    _write_test2_legend(fig_dir)
 
-    # trajectory (a square canvas when the bounding box is taller than wide,
-    # e.g. a far start beside the arc, so the equal-aspect plot stays legible)
-    tall = (y_hi - y_lo) > 1.2 * (x_hi - x_lo)
-    fig, ax = newfig(height=4.2 if tall else 2.5)
-    ax.plot(ref[:, 0], ref[:, 1], "k--", lw=1.3, label="Reference")
+    # trajectory; far starts get an inset of the approach to the path
+    fig, ax = newfig()
+    ax.plot(ref[:, 0], ref[:, 1], "k--", lw=0.9)
     for method in TEST2_METHODS:
         arr = runs[method]
-        ax.plot(arr[:, 1], arr[:, 2], color=METHOD_COLORS[method], lw=1.2,
-                label=method)
+        ax.plot(arr[:, 1], arr[:, 2], color=METHOD_COLORS[method], lw=0.9)
     ax.set_xlabel(r"$x$ [m]"); ax.set_ylabel(r"$y$ [m]")
     ax.set_xlim(x_lo, x_hi)
     ax.set_ylim(y_lo, y_hi)
-    ax.set_aspect("equal", adjustable="box")
-    finish(fig, ax, "trajectory", legend=True)
+    ax.set_aspect("equal", adjustable="datalim")
+    if abs(ey0) >= 1.5:
+        _add_near_path_inset(ax, runs, ref)
+    finish(fig, ax, "trajectory")
 
     # sigma
     fig, ax = newfig()
     for method in TEST2_METHODS:
         arr = runs[method]
-        ax.plot(arr[:, 0], arr[:, 10], color=METHOD_COLORS[method], lw=1.2,
-                label=method)
+        ax.plot(arr[:, 0], arr[:, 10], color=METHOD_COLORS[method], lw=0.9)
     ax.set_xlabel(r"$t$ [s]"); ax.set_ylabel(r"$\sigma$")
     ax.set_ylim(-0.05, 1.05)
     ax.set_xlim(0.0, t_plot)
     finish(fig, ax, "sigma")
 
-    # kappa (unclipped command; dotted lines = the rate budget kappa_bar = omega_max / v0)
+    # kappa (unclipped command; dotted lines = the rate limit kappa_bar = omega_max / v0)
     fig, ax = newfig()
     for method in TEST2_METHODS:
         arr = runs[method]
-        ax.plot(arr[:, 0], arr[:, 7], color=METHOD_COLORS[method], lw=1.2)
+        ax.plot(arr[:, 0], arr[:, 7], color=METHOD_COLORS[method], lw=0.9)
     ax.axhline(OMEGA_MAX / V0, color="0.5", lw=0.7, ls=":")
     ax.axhline(-OMEGA_MAX / V0, color="0.5", lw=0.7, ls=":")
     ax.set_xlabel(r"$t$ [s]"); ax.set_ylabel(r"$\kappa$ [1/m]")
@@ -1508,7 +1511,7 @@ def make_by_condition_panels(fig_dir, path, omega_n, zeta, ey0, eth0):
     fig, ax = newfig()
     for method in TEST2_METHODS:
         arr = runs[method]
-        ax.plot(arr[:, 0], arr[:, 5], color=METHOD_COLORS[method], lw=1.2)
+        ax.plot(arr[:, 0], arr[:, 5], color=METHOD_COLORS[method], lw=0.9)
     ax.axhline(0.0, color="0.7", lw=0.6)
     ax.set_xlabel(r"$t$ [s]"); ax.set_ylabel(r"$e_y$ [m]")
     ax.set_xlim(0.0, t_plot)
@@ -1519,7 +1522,7 @@ def make_by_condition_panels(fig_dir, path, omega_n, zeta, ey0, eth0):
     for method in TEST2_METHODS:
         arr = runs[method]
         ax.plot(arr[:, 0], np.degrees(arr[:, 6]),
-                color=METHOD_COLORS[method], lw=1.2)
+                color=METHOD_COLORS[method], lw=0.9)
     ax.axhline(0.0, color="0.7", lw=0.6)
     ax.set_xlabel(r"$t$ [s]"); ax.set_ylabel(r"$e_\theta$ [deg]")
     ax.set_xlim(0.0, t_plot)
@@ -1529,12 +1532,91 @@ def make_by_condition_panels(fig_dir, path, omega_n, zeta, ey0, eth0):
     fig, ax = newfig()
     for method in TEST2_METHODS:
         arr = runs[method]
-        ax.plot(arr[:, 0], arr[:, 9], color=METHOD_COLORS[method], lw=1.2)
+        ax.plot(arr[:, 0], arr[:, 9], color=METHOD_COLORS[method], lw=0.9)
     ax.axhline(OMEGA_MAX, color="0.5", lw=0.7, ls=":")
     ax.axhline(-OMEGA_MAX, color="0.5", lw=0.7, ls=":")
     ax.set_xlabel(r"$t$ [s]"); ax.set_ylabel(r"$\omega_{\rm raw}$ [rad/s]")
     ax.set_xlim(0.0, t_plot)
     finish(fig, ax, "omega")
+
+
+def _write_test2_legend(fig_dir):
+    """Legend strip shared by the per-condition panels of test 2."""
+    from matplotlib.lines import Line2D
+    handles = [Line2D([], [], color="k", ls="--", lw=0.9, label="Reference")]
+    handles += [Line2D([], [], color=METHOD_COLORS[m], lw=1.2, label=m)
+                for m in TEST2_METHODS]
+    fig = plt.figure(figsize=(5.0, 0.3))
+    fig.legend(handles=handles, loc="center", ncol=len(handles), fontsize=7,
+               frameon=False, columnspacing=1.6)
+    for ext in ("pdf", "png"):
+        fig.savefig(fig_dir / f"test2_legend.{ext}", dpi=300,
+                    bbox_inches="tight", pad_inches=0.02)
+    plt.close(fig)
+
+
+def _add_near_path_inset(ax, runs, ref, near_m=0.5, along_m=2.0):
+    """Inset magnifying where PP and ECPP reach the path from a far start.
+
+    The window covers the PP/ECPP trajectories from the first sample with
+    |e_y| < ``near_m`` until ``along_m`` further along the reference path
+    (the gate opens and the compensated response differs from PP there);
+    the inset sits in the emptiest corner of the panel."""
+    segs = []
+    for method in ("PP", "ECPP"):
+        arr = runs.get(method)
+        if arr is None:
+            continue
+        idx = np.flatnonzero(np.abs(arr[:, 5]) < near_m)
+        if len(idx) == 0:
+            continue
+        s0 = arr[idx[0], 4]
+        seg = arr[(arr[:, 4] >= s0) & (arr[:, 4] <= s0 + along_m)]
+        if len(seg):
+            segs.append(seg[:, 1:3])
+    if not segs:
+        return
+    pts = np.vstack(segs)
+    margin = 0.15
+    wx0, wx1 = pts[:, 0].min() - margin, pts[:, 0].max() + margin
+    wy0, wy1 = pts[:, 1].min() - margin, pts[:, 1].max() + margin
+    # make the window at least 0.8 m in each direction, centred
+    if wx1 - wx0 < 0.8:
+        c = 0.5 * (wx0 + wx1); wx0, wx1 = c - 0.4, c + 0.4
+    if wy1 - wy0 < 0.8:
+        c = 0.5 * (wy0 + wy1); wy0, wy1 = c - 0.4, c + 0.4
+    # emptiest candidate box: count plotted samples inside each box (the
+    # reference path counts ten times, it must stay visible) and reject boxes
+    # that overlap the zoom window
+    x_lo, x_hi = ax.get_xlim(); y_lo, y_hi = ax.get_ylim()
+    ax.figure.canvas.draw()  # datalim aspect may have widened the limits
+    x_lo, x_hi = ax.get_xlim(); y_lo, y_hi = ax.get_ylim()
+    traces = np.vstack([runs[m][:, 1:3] for m in TEST2_METHODS])
+    candidates = [
+        (0.50, 0.46, 0.48, 0.50), (0.02, 0.46, 0.48, 0.50),
+        (0.50, 0.02, 0.48, 0.50), (0.02, 0.02, 0.48, 0.50),
+        (0.02, 0.20, 0.36, 0.60), (0.62, 0.20, 0.36, 0.60),
+    ]
+    def cost(box):
+        fx0, fy0, fw, fh = box
+        bx0 = x_lo + fx0 * (x_hi - x_lo); bx1 = bx0 + fw * (x_hi - x_lo)
+        by0 = y_lo + fy0 * (y_hi - y_lo); by1 = by0 + fh * (y_hi - y_lo)
+        def inside(pts):
+            return ((pts[:, 0] >= bx0) & (pts[:, 0] <= bx1)
+                    & (pts[:, 1] >= by0) & (pts[:, 1] <= by1)).sum()
+        overlap = not (bx1 < wx0 or bx0 > wx1 or by1 < wy0 or by0 > wy1)
+        return inside(traces) + 10 * inside(ref) + (10 ** 6 if overlap else 0)
+    box = min(candidates, key=cost)
+    axins = ax.inset_axes(list(box))
+    axins.plot(ref[:, 0], ref[:, 1], "k--", lw=0.8)
+    for method in TEST2_METHODS:
+        arr = runs[method]
+        axins.plot(arr[:, 1], arr[:, 2], color=METHOD_COLORS[method], lw=0.9)
+    axins.set_xlim(wx0, wx1); axins.set_ylim(wy0, wy1)
+    axins.set_aspect("equal", adjustable="datalim")
+    axins.tick_params(labelsize=4.5, length=1.5, pad=1)
+    axins.grid(True, color="0.9", lw=0.4, ls=":")
+    ax.indicate_inset_zoom(axins, edgecolor="0.4", lw=0.6)
 
 
 def _write_condition_row(fig_dir, stem, runs, ref, xlim, ylim, t_plot):
