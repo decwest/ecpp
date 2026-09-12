@@ -1246,10 +1246,20 @@ def _fig_test1_grid(fig_dir, blocks, traces):
                 ax.set_xlabel(r"$t$ [s]")
             if j == 0:
                 ax.set_ylabel(r"$e_y$ [m]")
-                ax.legend(fontsize=5.2, framealpha=0.85)
-    fig.tight_layout(pad=0.4)
+    from matplotlib.lines import Line2D
+    handles = [
+        Line2D([], [], color=color, lw=1.1,
+               label=rf"$\omega_n={omega_n:.3f}$ rad/s")
+        for omega_n, color in zip(GRID_OMEGAS, colors)
+    ]
+    handles.append(Line2D([], [], color="0.3", lw=1.1, ls="--",
+                          label="PP-equivalent cell (dashed)"))
+    fig.legend(handles=handles, loc="upper center", ncol=len(handles),
+               fontsize=7, frameon=False, bbox_to_anchor=(0.5, 1.0))
+    fig.tight_layout(pad=0.4, rect=(0.0, 0.0, 1.0, 0.95))
     for ext in ("pdf", "png"):
-        fig.savefig(fig_dir / f"sim_test1_grid_response.{ext}", dpi=300)
+        fig.savefig(fig_dir / f"sim_test1_grid_response.{ext}", dpi=300,
+                    bbox_inches="tight")
     plt.close(fig)
 
 

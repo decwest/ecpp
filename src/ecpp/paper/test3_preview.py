@@ -370,7 +370,7 @@ def make_figure(fig_dir, path, traces):
     ax_e.set_ylabel(r"$e_y$ [m]")
     ax_e.set_title("(b) Lateral error (entry and exit dotted)",
                    fontsize=8, loc="left")
-    ax_e.legend(fontsize=6.0, loc="upper right", framealpha=0.85)
+
 
     # (c) curvature command around the arc entry
     s_ff, ff = feedforward_profiles(path)
@@ -391,11 +391,19 @@ def make_figure(fig_dir, path, traces):
     ax_k.set_ylabel(r"$\kappa$ [1/m]")
     ax_k.set_title("(c) Curvature command (corner)",
                    fontsize=8, loc="left")
-    ax_k.legend(fontsize=5.6, loc="upper left", framealpha=0.85)
     for ax in (ax_xy, ax_e, ax_k):
         ax.grid(True, color="0.9", lw=0.6, ls=":")
         ax.tick_params(labelsize=7)
-    fig.tight_layout(pad=0.3, w_pad=0.8)
+    # one legend row above the panels: reference, feedforward previews, arms
+    k_handles, k_labels = ax_k.get_legend_handles_labels()
+    e_handles, e_labels = ax_e.get_legend_handles_labels()
+    handles = k_handles + e_handles
+    labels = ["Reference" if lab.startswith("Reference") else lab
+              for lab in k_labels] + e_labels
+    fig.legend(handles, labels, loc="upper center", ncol=len(labels),
+               fontsize=6.3, frameon=False, bbox_to_anchor=(0.5, 1.0),
+               handlelength=2.2, columnspacing=1.0)
+    fig.tight_layout(pad=0.3, w_pad=0.8, rect=(0.0, 0.0, 1.0, 0.92))
     written = []
     for ext in ("pdf", "png"):
         out = fig_dir / f"{FIGURE_STEM}.{ext}"
