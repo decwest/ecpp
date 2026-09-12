@@ -1262,6 +1262,42 @@ def _fig_test1_grid(fig_dir, blocks, traces):
                     bbox_inches="tight")
     plt.close(fig)
 
+    # The manuscript assembles the grid from one file per cell with LaTeX
+    # sub-captions "(a) L_d = ..., zeta = ..." (no parameter text inside the
+    # panels) and a legend strip above the panels.
+    legend_fig = plt.figure(figsize=(6.0, 0.32))
+    legend_fig.legend(handles=handles, loc="center", ncol=len(handles),
+                      fontsize=7, frameon=False)
+    for ext in ("pdf", "png"):
+        legend_fig.savefig(fig_dir / f"sim_test1_grid_legend.{ext}", dpi=300,
+                           bbox_inches="tight", pad_inches=0.02)
+    plt.close(legend_fig)
+    for ld in GRID_LDS:
+        rows_by_cell = {
+            (round(r["omega_n"], 6), round(r["zeta"], 6)): r
+            for r in blocks[ld]["rows"]
+        }
+        for zeta in GRID_ZETAS:
+            pfig, pax = plt.subplots(figsize=(2.35, 1.75))
+            for omega_n, color in zip(GRID_OMEGAS, colors):
+                row = rows_by_cell[(round(omega_n, 6), round(zeta, 6))]
+                arr = traces[row["key"]]
+                pax.plot(arr[:, 0], arr[:, 5], color=color,
+                         ls="--" if row["pp_equivalent"] else "-", lw=1.1)
+            pax.axhline(0.0, color="0.65", lw=0.6)
+            pax.grid(True, color="0.9", lw=0.5)
+            pax.tick_params(labelsize=7)
+            pax.set_xlim(0.0, 12.0)
+            pax.set_ylim(-0.02, 0.16)
+            pax.set_xlabel(r"$t$ [s]", fontsize=8)
+            pax.set_ylabel(r"$e_y$ [m]", fontsize=8)
+            pfig.tight_layout(pad=0.3)
+            stem = f"sim_test1_grid_{_ld_tag(ld)}_{_zeta_tag(zeta)}"
+            for ext in ("pdf", "png"):
+                pfig.savefig(fig_dir / f"{stem}.{ext}", dpi=300,
+                             bbox_inches="tight", pad_inches=0.02)
+            plt.close(pfig)
+
 
 def run_test1(table_dir, fig_dir, trace_dir=None):
     """Run the frozen full-grid (omega_n, zeta, L_d) parameter study."""
