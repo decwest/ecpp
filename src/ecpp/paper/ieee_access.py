@@ -1086,16 +1086,6 @@ def _run_test1_grid_block(ld, trace_dir):
             row["ld"] = ld
             row["omega_name"] = omega_name
             row["lambda"] = omega_n / pp_cfg
-            analytic = second_order_response_with_initial_rate(
-                arr[:, 0],
-                ey0,
-                V0 * math.sin(eth0),
-                omega_n,
-                zeta,
-            )
-            row["analytic_rmse_e_y"] = float(
-                np.sqrt(np.mean(np.square(arr[:, 5] - analytic)))
-            )
             row["in_bound"] = bool(omega_n <= bound + 1e-9)
             row["pp_equivalent"] = bool(
                 math.isclose(omega_n, pp_cfg, rel_tol=0.0, abs_tol=1e-9)
@@ -1232,15 +1222,6 @@ def _fig_test1_grid(fig_dir, blocks, traces):
                 linestyle = "--" if row["pp_equivalent"] else "-"
                 ax.plot(arr[:, 0], arr[:, 5], color=color, ls=linestyle,
                         lw=1.1, label=label)
-                analytic = second_order_response_with_initial_rate(
-                    arr[:, 0],
-                    arr[0, 5],
-                    V0 * math.sin(arr[0, 6]),
-                    omega_n,
-                    zeta,
-                )
-                ax.plot(arr[:, 0], analytic, color=color, ls=":", lw=0.6,
-                        alpha=0.7)
             ax.axhline(0.0, color="0.65", lw=0.6)
             ax.grid(True, color="0.9", lw=0.5)
             ax.tick_params(labelsize=7)
@@ -1251,8 +1232,6 @@ def _fig_test1_grid(fig_dir, blocks, traces):
                 ax.set_xlabel(r"$t$ [s]")
             if j == 0:
                 ax.set_ylabel(r"$e_y$ [m]")
-                ax.plot([], [], color="0.35", ls=":", lw=0.8,
-                        label="design model")
                 ax.legend(fontsize=5.2, framealpha=0.85)
     fig.tight_layout(pad=0.4)
     for ext in ("pdf", "png"):
