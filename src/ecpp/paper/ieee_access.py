@@ -8,13 +8,13 @@ Engine (frozen experiment values)
 * Pure-python unicycle, 30 Hz exact constant-twist update, no LPF (tau = 0).
 * v0 = 0.5 m/s and the instantaneous state-update clip is fixed at
   +/-1.5 rad/s.  There is no acceleration or velocity-smoother model.
-* Test 1 runs the full frozen grid: configured omega_n in {0.777817,
-  1.132872, 1.555635} rad/s x zeta in {1/sqrt2, 1, sqrt2} x L_d in
+* Test 1 runs the full frozen grid: omega_n in {0.707107, 1.029884,
+  1.414214} rad/s x zeta in {1/sqrt2, 1, sqrt2} x L_d in
   {1.0, 0.5} m at the single fixed initial condition (0.15 m, 0 deg).
   Every omega_n on the axis is a named quantity (PP-equivalent at L_d=1.0,
   the rate-bound design limit at L_d=1.0, PP-equivalent at L_d=0.5).
 * Test 2 uses the design point of the hardware experiments: L_d = 1.0 m,
-  omega_n = omega_n_max(1.0 m) = 1.132872 rad/s, zeta = 1 (critical damping
+  omega_n = omega_n_max(1.0 m) = 1.029884 rad/s, zeta = 1 (critical damping
   at the rate-bound design limit).  Its initial conditions are the one-sided
   grid {0, 0.30, 2.0, 3.0 m} x {0, -90 deg} minus the origin (7 conditions):
   0.30 m keeps the gate open (sigma = 0.99), 2.0 m starts with the gate
@@ -22,8 +22,13 @@ Engine (frozen experiment values)
   laws saturate permanently.
 * Controllers: PP, DPP, ECPP w/o gate (sigma == 1), ECPP (gated).
 * ECPP law  kappa_des = kappa_PP - sigma(e_y) * (dK_y e_y + dK_theta sin e_theta)
-      dK_y     = K_y - 2/L_d^2 ,  K_y     = (omega_n / (|v|+0.05))^2
-      dK_theta = K_theta - 2/L_d,  K_theta = 2 zeta omega_n / (|v|+0.05)
+      dK_y     = K_y - 2/L_d^2 ,  K_y     = (omega_n / v0)^2
+      dK_theta = K_theta - 2/L_d,  K_theta = 2 zeta omega_n / v0
+  omega_n is the paper quantity (natural frequency of the local second-order
+  error dynamics at v = v0).  The controller/plugin computes its gains with
+  the regularized speed v_g = |v| + 0.05 instead, so the value handed to the
+  controller is the configured omega_n^cfg = omega_n * v_g / v0
+  (configured_omega_n()).  Both give the same K_y and K_theta.
 * Gate: descending sigmoid of eps_y = (e_y / L_d)^2 ONLY (heading independent),
   with eps_on = 0.10, eps_off = 0.50 (residual p = 0.01). This matches the
   current paper (the gate does not depend on heading error).
@@ -102,7 +107,7 @@ ARC_GOAL = ARC_R * 3.0 * math.pi / 4.0   # evaluate first 135 deg
 # acceleration budget; illustrative, plays no role in the design grid.
 ALPHA_MAX = 3.0      # rad/s^2
 
-PP_OMEGA_N = math.sqrt(2.0) * (V0 + V_EPSILON) / LD
+PP_OMEGA_N = math.sqrt(2.0) * V0 / LD
 # reproduction/legacy test-1 operating point
 REPRO_OMEGA_N = 2.12
 REPRO_ZETA = 1.0
@@ -119,34 +124,44 @@ def gate_envelope_error_bound(eps_off=None, ld=None):
 
 
 def omega_n_max(zeta, ebar, sbar=0.0, kappa_ref=0.0,
-                v=None, omega_max=None, v_epsilon=V_EPSILON):
-    """Rate-based design upper limit
+                v=None, omega_max=None):
+    """Rate-based design upper limit (manuscript eq. for omega_n,max)
 
         omega_n_max(zeta; ebar, sbar)
-            = (v_g/ebar) * (-zeta sbar + sqrt(zeta^2 sbar^2 + ebar w_budget / v))
+            = (v/ebar) * (-zeta sbar + sqrt(zeta^2 sbar^2 + ebar w_budget / v))
 
-    with v_g = |v| + v_epsilon and
-    w_budget = omega_max - v |kappa_ref| (straight: kappa_ref = 0).
-    This is a bound on the configured omega_n parameter."""
+    with w_budget = omega_max - v |kappa_ref| (straight: kappa_ref = 0).
+    This bounds the paper's omega_n, i.e. the natural frequency defined with
+    the nominal speed v; the plugin's configured value is
+    configured_omega_n(omega_n_max)."""
     v = V0 if v is None else v
     omega_max = OMEGA_MAX if omega_max is None else omega_max
-    v_gain = abs(v) + v_epsilon
     w_budget = omega_max - v * abs(kappa_ref)
     disc = zeta * zeta * sbar * sbar + ebar * w_budget / v
-    return (v_gain / ebar) * (-zeta * sbar + math.sqrt(disc))
+    return (abs(v) / ebar) * (-zeta * sbar + math.sqrt(disc))
+
+
+def configured_omega_n(omega_n, v=None, v_epsilon=V_EPSILON):
+    """Plugin/controller parameter that realizes the paper's ``omega_n``.
+
+    The manuscript defines K_y = (omega_n / v)^2 and K_theta = 2 zeta
+    omega_n / v with the nominal speed v; the controller evaluates the same
+    formulas with the regularized speed v_g = |v| + v_epsilon.  Passing
+    ``omega_n * v_g / |v|`` therefore reproduces the paper's gains exactly."""
+    v = V0 if v is None else v
+    return float(omega_n) * (abs(v) + v_epsilon) / abs(v)
 
 
 def omega_n_accel_bound(
     zeta, ebar, alpha_max=ALPHA_MAX, v=V0, v_epsilon=V_EPSILON
 ):
-    """Secondary configured-omega_n acceleration bound.
+    """Secondary acceleration bound on the paper's omega_n.
 
-    omega_n <= (alpha_max v_g^3 / (2 zeta v^2 ebar))^(1/3).
+    omega_n <= (alpha_max v / (2 zeta ebar))^(1/3)  (v_epsilon-free once the
+    natural frequency is defined at the nominal speed).
     Report only; no role in the design grid."""
-    v_gain = abs(v) + v_epsilon
-    return (
-        alpha_max * v_gain**3 / (2.0 * zeta * v * v * ebar)
-    ) ** (1.0 / 3.0)
+    del v_epsilon  # kept for signature compatibility
+    return (alpha_max * abs(v) / (2.0 * zeta * ebar)) ** (1.0 / 3.0)
 
 
 EBAR_G = gate_envelope_error_bound()                 # 0.7071 m
@@ -175,7 +190,7 @@ def configure(omega_max=None, ld=None, tmax=None, carrot_rule=None):
         if carrot_rule != "arc":
             raise ValueError(f"unknown carrot rule: {carrot_rule!r}")
         CARROT_RULE = carrot_rule
-    PP_OMEGA_N = math.sqrt(2.0) * (V0 + V_EPSILON) / LD
+    PP_OMEGA_N = math.sqrt(2.0) * V0 / LD
     EBAR_G = gate_envelope_error_bound()
     OMEGA_N_MAX = omega_n_max(1.0, EBAR_G, sbar=0.0)
 
@@ -281,6 +296,8 @@ class ArcPath:
 def dpp_parameters(omega_n, zeta, v=None, ld=None, far_factor=None):
     """DPP preview distances and coefficients (Wang-Mouri design pattern 3).
 
+    ``omega_n`` is the paper quantity (defined at the nominal speed); it is
+    converted with :func:`configured_omega_n` before reaching the controller.
     Returns ``(L1, L2, a1, a2, v_gain)`` from the same controller function the
     simulation uses, so the paper tables and the closed loop cannot drift.
     Raises ``ValueError`` when the design point has no admissible near
@@ -290,13 +307,14 @@ def dpp_parameters(omega_n, zeta, v=None, ld=None, far_factor=None):
     v = V0 if v is None else v
     ld = LD if ld is None else ld
     far_factor = DPP_FAR_FACTOR if far_factor is None else far_factor
+    omega_cfg = configured_omega_n(omega_n, v=v)
     config = EcppConfig(
         lookahead_m=float(ld),
         v_max=abs(float(v)),
-        ecpp_omega_n=float(omega_n),
+        ecpp_omega_n=omega_cfg,
         ecpp_zeta=float(zeta),
         ecpp_v_epsilon=V_EPSILON,
-        dpp_omega_n=float(omega_n),
+        dpp_omega_n=omega_cfg,
         dpp_zeta=float(zeta),
         dpp_gain_speed=abs(float(v)),
         dpp_far_factor=float(far_factor),
@@ -305,17 +323,22 @@ def dpp_parameters(omega_n, zeta, v=None, ld=None, far_factor=None):
 
 
 class Gains:
-    """Configured gains recorded with a trace for analysis overlays."""
+    """Design gains recorded with a trace for analysis overlays.
+
+    ``omega_n`` is the paper quantity (natural frequency at the nominal
+    speed).  ``omega_n_cfg`` is the value the controller is configured with;
+    both yield the same ``Ky`` and ``Kth``."""
 
     def __init__(self, omega_n, zeta, v=None, ld=None):
         v = V0 if v is None else v
         ld = LD if ld is None else ld
         v_gain = abs(v) + V_EPSILON
         self.omega_n = omega_n
+        self.omega_n_cfg = configured_omega_n(omega_n, v=v)
         self.zeta = zeta
         self.v_gain = v_gain
-        self.Ky = (omega_n / v_gain) ** 2
-        self.Kth = 2.0 * zeta * omega_n / v_gain
+        self.Ky = (omega_n / abs(v)) ** 2
+        self.Kth = 2.0 * zeta * omega_n / abs(v)
         self.Ky_pp = 2.0 / ld**2
         self.Kth_pp = 2.0 / ld
         self.dKy = self.Ky - self.Ky_pp
@@ -350,7 +373,7 @@ def simulate(path, method, omega_n, zeta, ey0, eth0):
         path=path.control_polyline(),
         method=method,
         lookahead_m=LD,
-        omega_n=omega_n,
+        omega_n=gains.omega_n_cfg,
         zeta=zeta,
         e_y0=ey0,
         e_psi0=eth0,
@@ -411,20 +434,22 @@ def overshoot(e, e0):
 
 
 def second_order_response(t, e0, wn, z):
-    """Homogeneous response from gains produced by configured ``wn``/``z``.
+    """Homogeneous response of the designed second-order model.
 
-    The legend continues to report the configured ``wn``.  The curve itself
-    uses the actual ``K_y`` and ``K_theta`` after additive speed
-    regularization, as required by the manuscript model.
+    ``wn`` is the paper's natural frequency (defined at v0); the curve uses
+    the gains ``K_y`` and ``K_theta`` that the controller realizes, which
+    coincide with the design values.
     """
     return second_order_response_with_initial_rate(t, e0, 0.0, wn, z)
 
 
 def second_order_response_with_initial_rate(t, e0, e_dot0, wn, z):
-    """Linear response computed from the actual regularized gains.
+    """Linear response of the designed model with an initial rate.
 
-    ``wn`` remains the configured value shown in legends.  The poles are
-    computed from ``K_y`` and ``K_psi`` after applying ``|v|+epsilon``.
+    ``wn`` is the paper's natural frequency (defined at v0).  The poles are
+    computed from ``K_y`` and ``K_psi`` at the nominal speed, which is what
+    the controller realizes after its ``|v|+epsilon`` regularization is
+    compensated by ``configured_omega_n``.
     """
 
     t = np.asarray(t, dtype=float)
@@ -889,8 +914,8 @@ def run_legacy_test1_preview(table_dir, fig_dir):
         "dt": DT, "v_epsilon": V_EPSILON,
         "eps_on": EPS_ON, "eps_off": EPS_OFF,
         "omega_n_max_formula": (
-            "v_gain*sqrt(omega_budget/(v*ebar_g)); "
-            "v_gain=abs(v)+v_epsilon"
+            "v*sqrt(omega_budget/(v*ebar_g)) (paper basis, omega_n at v0); "
+            "plugin value = omega_n*(abs(v)+v_epsilon)/abs(v)"
         ),
         "alpha_max_assumed": ALPHA_MAX,
         "omega_ratios": LEGACY_OMEGA_RATIOS, "zetas": LEGACY_ZETAS,
@@ -927,19 +952,21 @@ def run_legacy_test1_preview(table_dir, fig_dir):
 SPEED_LD = 1.0
 SPEED_COND = (0.30, 0.0)
 SPEED_ZETA = 1.0 / math.sqrt(2.0)
-SPEED_PP_OMEGA_N = math.sqrt(2.0) * (V0 + V_EPSILON) / SPEED_LD
+SPEED_PP_OMEGA_N = math.sqrt(2.0) * V0 / SPEED_LD
 SPEED_EBAR_G = math.sqrt(EPS_OFF) * SPEED_LD
 SPEED_OMEGA_N_MAX = omega_n_max(SPEED_ZETA, SPEED_EBAR_G, sbar=0.0)
 
 GRID_LD_SHORT = 0.5
-GRID_PP_OMEGA_N_LD05 = math.sqrt(2.0) * (V0 + V_EPSILON) / GRID_LD_SHORT
+GRID_PP_OMEGA_N_LD05 = math.sqrt(2.0) * V0 / GRID_LD_SHORT
 
 # ---------------------------------------------------------------------------
 # Frozen TEST 1 design: full (omega_n, zeta, L_d) grid at one fixed initial
-# condition.  Every omega_n column is a named quantity, not a tuned value:
-#   0.777817 rad/s = PP-equivalent configured omega_n at L_d = 1.0 m
-#   1.132872 rad/s = rate-bound design limit omega_n_max at L_d = 1.0 m
-#   1.555635 rad/s = PP-equivalent configured omega_n at L_d = 0.5 m
+# condition.  Every omega_n column is a named quantity, not a tuned value
+# (paper basis, natural frequency at v0; the plugin is configured with
+# configured_omega_n(), i.e. 1.1x these values: 0.778, 1.133, 1.556 rad/s):
+#   0.707107 rad/s = PP-equivalent omega_n = sqrt(2) v0 / L_d at L_d = 1.0 m
+#   1.029884 rad/s = rate-bound design limit omega_n_max at L_d = 1.0 m
+#   1.414214 rad/s = PP-equivalent omega_n at L_d = 0.5 m
 # The fixed initial condition keeps the gate fully on for BOTH lookaheads
 # ((0.15/0.5)^2 = 0.09 < eps_on = 0.10), so every cell starts in the linear
 # pole-placement regime; saturation phenomenology is exercised by the far
@@ -965,7 +992,11 @@ _HW_ZETAS = (
 
 
 def _hw_local_arms():
-    """Hardware experiment-1 local group: PP + {0.778, 1.133} x zeta grid."""
+    """Hardware experiment-1 local group: PP + {0.707, 1.030} x zeta grid.
+
+    The arm keys keep the plugin's configured values (w0778 = 0.778 rad/s,
+    w1133 = 1.133 rad/s) because they name the recorded hardware runs; the
+    labels report the paper's omega_n (defined at v0)."""
 
     arms = [{
         "key": "PP",
@@ -975,8 +1006,8 @@ def _hw_local_arms():
         "zeta": 1.0 / math.sqrt(2.0),
     }]
     for omega_n, wtag, wmath in (
-        (SPEED_PP_OMEGA_N, "w0778", r"\omega_n=0.778"),
-        (SPEED_OMEGA_N_MAX, "w1133", r"\omega_n=1.133"),
+        (SPEED_PP_OMEGA_N, "w0778", r"\omega_n=0.707"),
+        (SPEED_OMEGA_N_MAX, "w1133", r"\omega_n=1.030"),
     ):
         for zeta, ztag, zmath in _HW_ZETAS:
             arms.append({
@@ -1097,8 +1128,10 @@ def _run_test1_grid_block(ld, trace_dir):
             )
     block = {
         "lookahead_m": ld,
-        "omega_n_pp_configured": pp_cfg,
+        "omega_n_pp": pp_cfg,
+        "omega_n_pp_configured": configured_omega_n(pp_cfg),
         "omega_n_max": bound,
+        "omega_n_max_configured": configured_omega_n(bound),
         "lambda_max": bound / pp_cfg,
         "pp_negative_control_max_dev": control_dev,
         "pp_row": dict(pp_metric),
@@ -1128,9 +1161,9 @@ def _write_test1_grid_table(path_out, blocks):
         first_block = False
         lines.append(
             r"\multicolumn{9}{@{}l}{$L_d=" + f"{ld:.1f}"
-            + r"\,\mathrm{m}$:\ $\omega_{n,{\rm PP}}^{\rm cfg}="
-            + f"{block['omega_n_pp_configured']:.3f}"
-            + r"$, $\omega_{n,\max}^{\rm cfg}=" + f"{block['omega_n_max']:.3f}"
+            + r"\,\mathrm{m}$:\ $\omega_{n,{\rm PP}}="
+            + f"{block['omega_n_pp']:.3f}"
+            + r"$, $\omega_{n,\max}=" + f"{block['omega_n_max']:.3f}"
             + r"\,\mathrm{rad/s}$} \\"
         )
         pp = block.get("pp_row")
@@ -1249,6 +1282,7 @@ def run_test1(table_dir, fig_dir, trace_dir=None):
             "control_rate_hz": 1.0 / DT,
             "omega_max": OMEGA_MAX,
             "v_epsilon": V_EPSILON,
+            "omega_n_basis": ("natural frequency at v0; plugin configured value = omega_n*(v0+v_epsilon)/v0"),
             "acceleration_model": None,
             "clip_semantics": "instantaneous_state_update_only",
             "carrot_rule": "continuous_arc_length",
@@ -1487,6 +1521,7 @@ def run_test2(table_dir, fig_dir, omega_n, zeta, ld=None):
                          "dt": DT,
                          "control_rate_hz": 1.0 / DT,
                          "v0": V0, "v_epsilon": V_EPSILON,
+                         "omega_n_basis": ("natural frequency at v0; plugin configured value = omega_n*(v0+v_epsilon)/v0"),
                          "acceleration_model": None,
                          "conditions": [
                              [ey, math.degrees(epsi)]
@@ -1531,6 +1566,7 @@ def run_hw_reference(table_dir, trace_root):
     trace_root.mkdir(parents=True, exist_ok=True)
     out = {"meta": {
         "v0": V0, "v_epsilon": V_EPSILON,
+        "omega_n_basis": ("natural frequency at v0; plugin configured value = omega_n*(v0+v_epsilon)/v0"),
         "omega_max": OMEGA_MAX, "dt": DT, "control_rate_hz": 1.0 / DT,
         "ts_abs_band_m": HW_TS_ABS_BAND, "reach_band_m": HW_REACH_BAND,
         "notes": ("Ideal unicycle, 30 Hz, instantaneous +/-1.5 rad/s "
@@ -1699,7 +1735,7 @@ def main(
     print("\n*** TEST 1 frozen grid ***")
     for ld in GRID_LDS:
         block = test1["blocks"][_ld_tag(ld)]
-        print(f"Ld={ld:.1f}: omega_pp={block['omega_n_pp_configured']:.6f}, "
+        print(f"Ld={ld:.1f}: omega_pp={block['omega_n_pp']:.6f}, "
               f"omega_n_max={block['omega_n_max']:.6f}, "
               f"negative_control_dev="
               f"{block['pp_negative_control_max_dev']:.2e}")

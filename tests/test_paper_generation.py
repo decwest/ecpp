@@ -88,24 +88,40 @@ def test_canonical_ieee_cli_accepts_explicit_apply(tmp_path):
     assert (tmp_path / "generated" / "tables" / "hw_exp1_sim_reference.json").is_file()
 
 
-def test_paper_generators_use_additive_speed_regularization():
+def test_paper_generators_define_omega_n_at_the_nominal_speed():
     ky, kpsi = figure1.target_gains(1.0, 1.0)
     gains = ieee_access.Gains(1.0, 1.0)
     assert gains.v_gain == pytest.approx(0.55)
+    assert gains.Ky == pytest.approx((1.0 / 0.5) ** 2)
+    assert gains.Kth == pytest.approx(2.0 / 0.5)
     assert ky == pytest.approx(gains.Ky)
     assert kpsi == pytest.approx(gains.Kth)
+    # The controller regularizes the speed, so it is configured with the
+    # scaled value; the realized gains coincide with the paper's.
+    assert gains.omega_n_cfg == pytest.approx(1.0 * 0.55 / 0.5)
+    assert ieee_access.configured_omega_n(1.0) == pytest.approx(1.1)
+    from ecpp.config import EcppConfig
+    from ecpp.controllers.ecpp import calc_ecpp_terms
+    from ecpp.geometry import calc_path_distances
+    config = EcppConfig(
+        lookahead_m=1.0, v_max=0.5, ecpp_omega_n=gains.omega_n_cfg,
+        ecpp_zeta=1.0, ecpp_v_epsilon=0.05,
+    )
+    path = np.array([[0.0, 0.0], [4.0, 0.0]])
+    terms = calc_ecpp_terms(
+        np.array([1.0, 0.1, 0.0]), np.array([0.5, 0.0]), 0, path,
+        calc_path_distances(path), 1.0, config,
+    )
+    assert terms.v_gain == pytest.approx(0.55)
+    assert terms.k_y == pytest.approx(gains.Ky)
+    assert terms.k_psi == pytest.approx(gains.Kth)
 
 
-def test_analytic_overlay_uses_gains_after_speed_regularization():
-    configured_omega_n = 1.2
+def test_analytic_overlay_uses_the_paper_natural_frequency():
+    omega_n = 1.2
     time = np.array([0.0, 1.0])
-    response = ieee_access.second_order_response(
-        time, 1.0, configured_omega_n, 1.0
-    )
-    natural_from_gains = configured_omega_n * 0.5 / 0.55
-    expected = np.exp(-natural_from_gains * time) * (
-        1.0 + natural_from_gains * time
-    )
+    response = ieee_access.second_order_response(time, 1.0, omega_n, 1.0)
+    expected = np.exp(-omega_n * time) * (1.0 + omega_n * time)
     assert response == pytest.approx(expected)
 
 
@@ -192,12 +208,20 @@ def test_frozen_paper_experiment_conditions_are_exact():
     assert ieee_access.SPEED_LD == pytest.approx(1.0)
     assert ieee_access.SPEED_COND == pytest.approx((0.30, 0.0))
     assert ieee_access.SPEED_ZETA == pytest.approx(1.0 / np.sqrt(2.0))
+    # Paper basis (2026-09-12): omega_n is the natural frequency at v0; the
+    # plugin is configured with omega_n * (v0 + v_epsilon) / v0.
     assert ieee_access.SPEED_PP_OMEGA_N == pytest.approx(
-        np.sqrt(2.0) * 0.55
+        np.sqrt(2.0) * 0.5
     )
+    assert ieee_access.SPEED_OMEGA_N_MAX == pytest.approx(
+        0.5 * np.sqrt(1.5 / (0.5 * np.sqrt(0.5))), rel=1e-9
+    )
+    assert ieee_access.configured_omega_n(
+        ieee_access.SPEED_OMEGA_N_MAX
+    ) == pytest.approx(1.1328719291)
     assert ieee_access.GRID_LD_SHORT == pytest.approx(0.5)
     assert ieee_access.GRID_PP_OMEGA_N_LD05 == pytest.approx(
-        np.sqrt(2.0) * 0.55 / 0.5
+        np.sqrt(2.0) * 0.5 / 0.5
     )
     # Frozen hardware experiment-1 arms (redesigned 2026-07-16, L_d=1.0).
     local_arms = ieee_access._hw_local_arms()
@@ -279,7 +303,9 @@ def test_figure1_reuses_preregistered_chapter5_arms_without_gain_search():
 )
 def test_configured_pp_equivalent_ecpp_matches_pp(ld, ey0, epsi0):
     path = np.array([[0.0, 0.0], [8.0, 0.0]])
-    omega_n = np.sqrt(2.0) * 0.55 / ld
+    # Controller-level value: the paper's sqrt(2) v0 / L_d scaled by v_g/v0.
+    omega_n = ieee_access.configured_omega_n(np.sqrt(2.0) * 0.5 / ld)
+    assert omega_n == pytest.approx(np.sqrt(2.0) * 0.55 / ld)
     common = dict(
         path=path,
         lookahead_m=ld,

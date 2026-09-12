@@ -62,10 +62,9 @@ SCENARIOS = (
 
 
 def target_gains(omega_n: float, zeta: float) -> tuple[float, float]:
-    """Return gains produced by the configured parameters."""
+    """Return the paper's gains for ``omega_n`` defined at the nominal speed."""
 
-    v_gain = abs(V0) + V_EPSILON
-    return (omega_n / v_gain) ** 2, 2.0 * zeta * omega_n / v_gain
+    return (omega_n / abs(V0)) ** 2, 2.0 * zeta * omega_n / abs(V0)
 
 
 def simulate(method: str, scenario: dict[str, object]) -> np.ndarray:
@@ -77,7 +76,7 @@ def simulate(method: str, scenario: dict[str, object]) -> np.ndarray:
         ),
         method=method,
         lookahead_m=float(scenario["lookahead"]),
-        omega_n=float(scenario["omega_n"]),
+        omega_n=study.configured_omega_n(float(scenario["omega_n"])),
         zeta=float(scenario["zeta"]),
         e_y0=float(scenario["ey0"]),
         e_psi0=float(scenario["eth0"]),
@@ -183,6 +182,9 @@ def _write_metadata(
             ],
             "ecpp": {
                 "omega_n": scenario["omega_n"],
+                "omega_n_configured": study.configured_omega_n(
+                    float(scenario["omega_n"])
+                ),
                 "zeta": scenario["zeta"],
             },
             "metrics": {

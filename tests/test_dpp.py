@@ -36,7 +36,9 @@ def test_dpp_coefficients_satisfy_the_paper_three_conditions():
 
 
 def test_dpp_paper_design_point_geometry():
-    # The frozen test-2 design point: omega_n = omega_n_max(1.0 m), zeta = 1.
+    # The frozen test-2 design point: omega_n = omega_n_max(1.0 m) = 1.029884
+    # rad/s at v0, zeta = 1.  The controller receives the configured value
+    # omega_n * (v0 + v_epsilon) / v0 = 1.132872 rad/s.
     config = _config(lookahead_m=1.0, omega_n=1.1328719291, zeta=1.0)
     l1, l2, a1, a2, _ = calc_dpp_parameters(config)
     assert l1 == pytest.approx(2.0)
@@ -46,7 +48,8 @@ def test_dpp_paper_design_point_geometry():
 
 
 def test_dpp_rejects_singular_or_negative_near_preview():
-    # K_theta = L_1 K_y makes the near preview distance singular.
+    # K_theta = L_1 K_y makes the near preview distance singular
+    # (configured value of the paper's sqrt(2) v0 / 0.5 = 1.414 rad/s).
     with pytest.raises(ValueError):
         calc_dpp_parameters(_config(lookahead_m=0.5, omega_n=1.5556349186, zeta=np.sqrt(2.0)))
 

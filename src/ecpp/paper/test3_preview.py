@@ -68,7 +68,7 @@ OMEGA_MAX = ia.OMEGA_MAX
 DT = ia.DT
 TMAX = ia.TMAX
 
-OMEGA_N = ia.SPEED_OMEGA_N_MAX     # 1.132872 rad/s, the Test-2 / hardware design point
+OMEGA_N = ia.SPEED_OMEGA_N_MAX     # 1.029884 rad/s (at v0), the Test-2 / hardware design point
 ZETA = 1.0
 COND = (0.0, 0.0)                  # start on the path
 LOOKAHEADS = (0.5, 1.0)
@@ -174,7 +174,7 @@ def _run(path_polyline, path, method, ld):
         path=path_polyline,
         method=method,
         lookahead_m=ld,
-        omega_n=OMEGA_N,
+        omega_n=ia.configured_omega_n(OMEGA_N),
         zeta=ZETA,
         e_y0=COND[0],
         e_psi0=COND[1],
@@ -439,6 +439,8 @@ def run_test3(table_dir, fig_dir, trace_dir):
             "clip_semantics": "instantaneous_state_update_only",
             "carrot_rule": "continuous_arc_length",
             "omega_n": OMEGA_N,
+            "omega_n_configured": ia.configured_omega_n(OMEGA_N),
+            "omega_n_basis": "natural frequency at v0; plugin configured value = omega_n*(v0+v_epsilon)/v0",
             "omega_n_name": "omega_n_max_ld_1p0 (Test-2 / hardware design point)",
             "zeta": ZETA,
             "initial_condition": list(COND),

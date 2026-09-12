@@ -28,11 +28,17 @@ Test 1 (full design-parameter grid, frozen 2026-07-16):
   straight path:
   - `L_d = {1.0, 0.5} m`
   - `zeta = {1/sqrt(2), 1, sqrt(2)}`
-  - common absolute axis `omega_n = {0.777817, 1.132872, 1.555635} rad/s`;
-    every value is named: PP-equivalent `omega_n_PP_cfg(1.0)`, the rate-bound
-    design limit `omega_n_max(1.0)`, and PP-equivalent `omega_n_PP_cfg(0.5)`
-    (`omega_n_PP_cfg = sqrt(2) (v + v_epsilon) / L_d`)
-- out-of-bound cells are kept and labeled (only `L_d=1.0`, `1.556 rad/s`);
+  - common absolute axis `omega_n = {0.707107, 1.029884, 1.414214} rad/s`
+    (paper basis since 2026-09-12: the natural frequency of the local
+    second-order model at the nominal speed `v0`); every value is named:
+    PP-equivalent `omega_n_PP(1.0)`, the rate-bound design limit
+    `omega_n_max(1.0)`, and PP-equivalent `omega_n_PP(0.5)`
+    (`omega_n_PP = sqrt(2) v0 / L_d`)
+  - the controller/plugin computes its gains with `v_g = v0 + v_epsilon`, so
+    the generator hands it `configured_omega_n = omega_n (v0 + v_epsilon)/v0`
+    (`{0.778, 1.133, 1.556} rad/s`); the realized `K_y`, `K_theta` are the
+    paper's
+- out-of-bound cells are kept and labeled (only `L_d=1.0`, `1.414 rad/s`);
   the `(lambda, zeta) = (1, 1/sqrt(2))` cells are exact PP negative controls
 - Test 1 is a parameter study only; it does not select the Test-2 operating
   point (the earlier pre-declared selection rule was retired on 2026-09-08)
