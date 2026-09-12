@@ -75,8 +75,8 @@ class EcppConfig:
             raise ValueError("omega_n values must be > 0")
         if self.ecpp_zeta <= 0.0 or self.dpp_zeta <= 0.0:
             raise ValueError("zeta values must be > 0")
-        if self.ecpp_v_epsilon <= 0.0:
-            raise ValueError("ecpp_v_epsilon must be > 0")
+        if self.ecpp_v_epsilon < 0.0:
+            raise ValueError("ecpp_v_epsilon must be >= 0")
         if self.dpp_far_factor <= 0.0:
             raise ValueError("dpp_far_factor must be > 0")
         if self.ecpp_gate_error_on < 0.0:

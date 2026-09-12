@@ -73,6 +73,17 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
+# Figure style shared by every paper figure: Times New Roman text and
+# STIX (Times-like) math, matching the manuscript body font.
+PAPER_RCPARAMS = {
+    "font.family": "serif",
+    "font.serif": ["Times New Roman", "Times", "Nimbus Roman", "Liberation Serif",
+                   "DejaVu Serif"],
+    "mathtext.fontset": "stix",
+    "axes.unicode_minus": False,
+}
+plt.rcParams.update(PAPER_RCPARAMS)
+
 from ..config import EcppConfig
 from ..controllers.dpp import calc_dpp_parameters
 from ..controllers.gates import gate_abs
@@ -85,7 +96,10 @@ ROOT = Path.cwd()
 # Engine parameters (current paper values)
 # ---------------------------------------------------------------------------
 V0 = 0.50            # m/s forward speed
-V_EPSILON = 0.05     # m/s additive low-speed regularization
+V_EPSILON = 0.0      # m/s additive low-speed regularization; the paper
+                     # simulations run at constant v0 > 0, so none is needed
+                     # and omega_n is handed to the controller as is (the
+                     # Nav2 plugin uses 0.05 m/s; see configured_omega_n)
 OMEGA_MAX = 1.5      # rad/s instantaneous state-update clip
 DT = 1.0 / 30.0      # s control period (30 Hz)
 LD = 1.0             # m mutable lookahead used by one simulation run
@@ -1404,6 +1418,9 @@ def make_by_condition_panels(fig_dir, path, omega_n, zeta, ey0, eth0):
             fig.savefig(fig_dir / f"{stem}_{name}.{ext}", dpi=150)
         plt.close(fig)
 
+    _write_condition_row(fig_dir, stem, runs, ref, (x_lo, x_hi), (y_lo, y_hi),
+                         t_plot)
+
     # trajectory (a square canvas when the bounding box is taller than wide,
     # e.g. a far start beside the arc, so the equal-aspect plot stays legible)
     tall = (y_hi - y_lo) > 1.2 * (x_hi - x_lo)
@@ -1472,6 +1489,54 @@ def make_by_condition_panels(fig_dir, path, omega_n, zeta, ey0, eth0):
     ax.set_xlabel(r"$t$ [s]"); ax.set_ylabel(r"$\omega_{\rm raw}$ [rad/s]")
     ax.set_xlim(0.0, t_plot)
     finish(fig, ax, "omega")
+
+
+def _write_condition_row(fig_dir, stem, runs, ref, xlim, ylim, t_plot):
+    """One 1x4 row (trajectory, gate, lateral error, curvature command) with a
+    single method legend above the panels; this is the figure the manuscript
+    embeds for each test-2 condition."""
+    plt.rcParams.update({"font.size": 8})
+    (x_lo, x_hi), (y_lo, y_hi) = xlim, ylim
+    fig, axes = plt.subplots(1, 4, figsize=(7.2, 1.9))
+    ax_xy, ax_sig, ax_ey, ax_k = axes
+    ax_xy.plot(ref[:, 0], ref[:, 1], "k--", lw=0.9, label="Reference")
+    for method in TEST2_METHODS:
+        arr = runs[method]
+        ax_xy.plot(arr[:, 1], arr[:, 2], color=METHOD_COLORS[method], lw=1.0,
+                   label=method)
+        ax_sig.plot(arr[:, 0], arr[:, 10], color=METHOD_COLORS[method], lw=1.0)
+        ax_ey.plot(arr[:, 0], arr[:, 5], color=METHOD_COLORS[method], lw=1.0)
+        ax_k.plot(arr[:, 0], arr[:, 7], color=METHOD_COLORS[method], lw=1.0)
+    ax_xy.set_xlim(x_lo, x_hi)
+    ax_xy.set_ylim(y_lo, y_hi)
+    # keep the panel box the same height in every condition (a tall bounding
+    # box, e.g. the far start beside the arc, widens the data limits instead)
+    ax_xy.set_aspect("equal", adjustable="datalim")
+    ax_xy.set_xlabel(r"$x$ [m]"); ax_xy.set_ylabel(r"$y$ [m]")
+    ax_xy.set_title("(a) Trajectory", fontsize=8, loc="left")
+    ax_sig.set_ylim(-0.05, 1.05)
+    ax_sig.set_xlabel(r"$t$ [s]"); ax_sig.set_ylabel(r"$\sigma$")
+    ax_sig.set_title("(b) Gate value", fontsize=8, loc="left")
+    ax_ey.axhline(0.0, color="0.7", lw=0.6)
+    ax_ey.set_xlabel(r"$t$ [s]"); ax_ey.set_ylabel(r"$e_y$ [m]")
+    ax_ey.set_title("(c) Lateral error", fontsize=8, loc="left")
+    ax_k.axhline(OMEGA_MAX / V0, color="0.5", lw=0.7, ls=":")
+    ax_k.axhline(-OMEGA_MAX / V0, color="0.5", lw=0.7, ls=":")
+    ax_k.set_xlabel(r"$t$ [s]"); ax_k.set_ylabel(r"$\kappa$ [1/m]")
+    ax_k.set_title("(d) Curvature command", fontsize=8, loc="left")
+    for ax in (ax_sig, ax_ey, ax_k):
+        ax.set_xlim(0.0, t_plot)
+    for ax in axes:
+        ax.grid(True, color="0.9", lw=0.6, ls=":")
+        ax.tick_params(labelsize=7)
+    handles, labels = ax_xy.get_legend_handles_labels()
+    fig.legend(handles, labels, loc="upper center", ncol=len(labels),
+               fontsize=7, frameon=False, bbox_to_anchor=(0.5, 1.02))
+    fig.tight_layout(pad=0.3, w_pad=0.6, rect=(0.0, 0.0, 1.0, 0.9))
+    for ext in ("pdf", "png"):
+        fig.savefig(fig_dir / f"{stem}_row.{ext}", dpi=150,
+                    bbox_inches="tight")
+    plt.close(fig)
 
 
 def run_test2(table_dir, fig_dir, omega_n, zeta, ld=None):

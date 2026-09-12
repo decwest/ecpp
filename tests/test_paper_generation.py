@@ -91,28 +91,31 @@ def test_canonical_ieee_cli_accepts_explicit_apply(tmp_path):
 def test_paper_generators_define_omega_n_at_the_nominal_speed():
     ky, kpsi = figure1.target_gains(1.0, 1.0)
     gains = ieee_access.Gains(1.0, 1.0)
-    assert gains.v_gain == pytest.approx(0.55)
+    # Paper simulations run at constant v0 without speed regularization.
+    assert ieee_access.V_EPSILON == 0.0
+    assert gains.v_gain == pytest.approx(0.5)
     assert gains.Ky == pytest.approx((1.0 / 0.5) ** 2)
     assert gains.Kth == pytest.approx(2.0 / 0.5)
     assert ky == pytest.approx(gains.Ky)
     assert kpsi == pytest.approx(gains.Kth)
-    # The controller regularizes the speed, so it is configured with the
-    # scaled value; the realized gains coincide with the paper's.
-    assert gains.omega_n_cfg == pytest.approx(1.0 * 0.55 / 0.5)
-    assert ieee_access.configured_omega_n(1.0) == pytest.approx(1.1)
+    # Without regularization the controller takes the paper's omega_n as is;
+    # the Nav2 plugin (v_epsilon = 0.05) needs the v_g/v0-scaled value.
+    assert gains.omega_n_cfg == pytest.approx(1.0)
+    assert ieee_access.configured_omega_n(1.0) == pytest.approx(1.0)
+    assert ieee_access.configured_omega_n(1.0, v_epsilon=0.05) == pytest.approx(1.1)
     from ecpp.config import EcppConfig
     from ecpp.controllers.ecpp import calc_ecpp_terms
     from ecpp.geometry import calc_path_distances
     config = EcppConfig(
         lookahead_m=1.0, v_max=0.5, ecpp_omega_n=gains.omega_n_cfg,
-        ecpp_zeta=1.0, ecpp_v_epsilon=0.05,
+        ecpp_zeta=1.0, ecpp_v_epsilon=ieee_access.V_EPSILON,
     )
     path = np.array([[0.0, 0.0], [4.0, 0.0]])
     terms = calc_ecpp_terms(
         np.array([1.0, 0.1, 0.0]), np.array([0.5, 0.0]), 0, path,
         calc_path_distances(path), 1.0, config,
     )
-    assert terms.v_gain == pytest.approx(0.55)
+    assert terms.v_gain == pytest.approx(0.5)
     assert terms.k_y == pytest.approx(gains.Ky)
     assert terms.k_psi == pytest.approx(gains.Kth)
 
@@ -217,8 +220,8 @@ def test_frozen_paper_experiment_conditions_are_exact():
         0.5 * np.sqrt(1.5 / (0.5 * np.sqrt(0.5))), rel=1e-9
     )
     assert ieee_access.configured_omega_n(
-        ieee_access.SPEED_OMEGA_N_MAX
-    ) == pytest.approx(1.1328719291)
+        ieee_access.SPEED_OMEGA_N_MAX, v_epsilon=0.05
+    ) == pytest.approx(1.1328719291)  # the Nav2 plugin parameter
     assert ieee_access.GRID_LD_SHORT == pytest.approx(0.5)
     assert ieee_access.GRID_PP_OMEGA_N_LD05 == pytest.approx(
         np.sqrt(2.0) * 0.5 / 0.5
@@ -273,7 +276,7 @@ def test_frozen_paper_experiment_conditions_are_exact():
     l1, l2, a1, a2, v_gain = ieee_access.dpp_parameters(
         ieee_access.TEST2_OMEGA_N, ieee_access.TEST2_ZETA, ld=ieee_access.TEST2_LD
     )
-    assert v_gain == pytest.approx(0.55)
+    assert v_gain == pytest.approx(0.5)
     assert l1 == pytest.approx(2.0)
     assert l2 == pytest.approx(1.4286, abs=2e-3)
     assert a1 * l1**2 + a2 * l2**2 == pytest.approx(2.0)
@@ -303,8 +306,9 @@ def test_figure1_reuses_preregistered_chapter5_arms_without_gain_search():
 )
 def test_configured_pp_equivalent_ecpp_matches_pp(ld, ey0, epsi0):
     path = np.array([[0.0, 0.0], [8.0, 0.0]])
-    # Controller-level value: the paper's sqrt(2) v0 / L_d scaled by v_g/v0.
-    omega_n = ieee_access.configured_omega_n(np.sqrt(2.0) * 0.5 / ld)
+    # Controller-level value with the plugin's regularization (0.05 m/s):
+    # the paper's sqrt(2) v0 / L_d scaled by v_g/v0.
+    omega_n = ieee_access.configured_omega_n(np.sqrt(2.0) * 0.5 / ld, v_epsilon=0.05)
     assert omega_n == pytest.approx(np.sqrt(2.0) * 0.55 / ld)
     common = dict(
         path=path,

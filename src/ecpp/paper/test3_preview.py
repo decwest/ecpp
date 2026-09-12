@@ -320,8 +320,8 @@ def write_table(path_out, metrics):
 def _arm_style(method, ld):
     color = ia.METHOD_COLORS[method]
     if math.isclose(ld, max(LOOKAHEADS)):
-        return dict(color=color, lw=1.4, ls="-")
-    return dict(color=color, lw=1.2, ls=(0, (4, 1.5)))
+        return dict(color=color, lw=1.0, ls="-")
+    return dict(color=color, lw=0.9, ls=(0, (4, 1.5)))
 
 
 def make_figure(fig_dir, path, traces):
@@ -332,7 +332,7 @@ def make_figure(fig_dir, path, traces):
 
     # (a) trajectories in the corner region with an inset at the arc entry
     ref = path.sample(800)
-    ax_xy.plot(ref[:, 0], ref[:, 1], "k--", lw=1.0, label="Reference")
+    ax_xy.plot(ref[:, 0], ref[:, 1], "k--", lw=0.8, label="Reference")
     for method, ld in ARMS:
         trace = traces[arm_key(method, ld)]
         ax_xy.plot(trace.pose[:, 0], trace.pose[:, 1],
@@ -376,7 +376,7 @@ def make_figure(fig_dir, path, traces):
     s_ff, ff = feedforward_profiles(path)
     ref_k = np.array([path.curvature(v) for v in s_ff])
     ax_k.plot(s_ff, ref_k, "k--", lw=1.0, label=r"Reference $\kappa_r$")
-    for ld, lw in zip(LOOKAHEADS, (0.9, 1.3)):
+    for ld, lw in zip(LOOKAHEADS, (0.8, 1.1)):
         ax_k.plot(s_ff, ff[ld], color="0.45", lw=lw, ls=":",
                   label=rf"$\kappa_{{\rm prev}}$, $L_d={ld:.1f}$ m")
     for method, ld in ARMS:
