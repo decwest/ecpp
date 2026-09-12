@@ -324,27 +324,20 @@ def _arm_style(method, ld):
     return dict(color=color, lw=0.9, ls=(0, (4, 1.5)))
 
 
-def make_figure(fig_dir, path, traces):
-    plt.rcParams.update({"font.size": 8})
-    fig, (ax_xy, ax_e, ax_k) = plt.subplots(
-        1, 3, figsize=(7.2, 2.6), gridspec_kw={"width_ratios": [1.15, 1.0, 1.0]}
-    )
-
-    # (a) trajectories in the corner region with an inset at the arc entry
-    ref = path.sample(800)
-    ax_xy.plot(ref[:, 0], ref[:, 1], "k--", lw=0.8, label="Reference")
+def _draw_trajectory(ax, path, traces, ref, inset_ticksize=5.5):
+    """(a) trajectories in the corner region with an inset at the arc entry."""
+    ax.plot(ref[:, 0], ref[:, 1], "k--", lw=0.8, label="Reference")
     for method, ld in ARMS:
         trace = traces[arm_key(method, ld)]
-        ax_xy.plot(trace.pose[:, 0], trace.pose[:, 1],
-                   label=f"{method}, $L_d={ld:.1f}$ m", **_arm_style(method, ld))
+        ax.plot(trace.pose[:, 0], trace.pose[:, 1],
+                label=f"{method}, $L_d={ld:.1f}$ m", **_arm_style(method, ld))
     (x_lo, x_hi), (y_lo, y_hi) = XY_PANEL_LIMITS
-    ax_xy.set_xlim(x_lo, x_hi)
-    ax_xy.set_ylim(y_lo, y_hi)
-    ax_xy.set_aspect("equal", adjustable="box")
-    ax_xy.set_xlabel(r"$x$ [m]")
-    ax_xy.set_ylabel(r"$y$ [m]")
-    ax_xy.set_title("(a) Trajectories (inset: corner)", fontsize=8, loc="left")
-    axins = ax_xy.inset_axes(XY_INSET_POSITION)
+    ax.set_xlim(x_lo, x_hi)
+    ax.set_ylim(y_lo, y_hi)
+    ax.set_aspect("equal", adjustable="box")
+    ax.set_xlabel(r"$x$ [m]")
+    ax.set_ylabel(r"$y$ [m]")
+    axins = ax.inset_axes(XY_INSET_POSITION)
     axins.plot(ref[:, 0], ref[:, 1], "k--", lw=0.8)
     for method, ld in ARMS:
         trace = traces[arm_key(method, ld)]
@@ -353,63 +346,117 @@ def make_figure(fig_dir, path, traces):
     axins.set_xlim(ix_lo, ix_hi)
     axins.set_ylim(iy_lo, iy_hi)
     axins.set_aspect("equal", adjustable="box")
-    axins.tick_params(labelsize=5.5, length=2, pad=1)
+    axins.tick_params(labelsize=inset_ticksize, length=2, pad=1)
     axins.grid(True, color="0.9", lw=0.5, ls=":")
-    ax_xy.indicate_inset_zoom(axins, edgecolor="0.4", lw=0.7)
+    ax.indicate_inset_zoom(axins, edgecolor="0.4", lw=0.7)
 
-    # (b) lateral error versus arc length
+
+def _draw_lateral_error(ax, path, traces):
+    """(b) lateral error versus arc length (entry and exit dotted)."""
     for method, ld in ARMS:
         trace = traces[arm_key(method, ld)]
-        ax_e.plot(trace.path_s, trace.e_y, label=f"{method}, $L_d={ld:.1f}$ m",
-                  **_arm_style(method, ld))
+        ax.plot(trace.path_s, trace.e_y, label=f"{method}, $L_d={ld:.1f}$ m",
+                **_arm_style(method, ld))
     for s_mark in (path.s_entry, path.s_exit):
-        ax_e.axvline(s_mark, color="0.5", lw=0.7, ls=":")
-    ax_e.axhline(0.0, color="0.5", lw=0.7, ls=":")
-    ax_e.set_xlim(0.0, path.goal)
-    ax_e.set_xlabel(r"Reference arc length $s$ [m]")
-    ax_e.set_ylabel(r"$e_y$ [m]")
-    ax_e.set_title("(b) Lateral error (entry and exit dotted)",
-                   fontsize=8, loc="left")
+        ax.axvline(s_mark, color="0.5", lw=0.7, ls=":")
+    ax.axhline(0.0, color="0.5", lw=0.7, ls=":")
+    ax.set_xlim(0.0, path.goal)
+    ax.set_xlabel(r"Reference arc length $s$ [m]")
+    ax.set_ylabel(r"$e_y$ [m]")
 
 
-    # (c) curvature command around the arc entry
+def _draw_curvature(ax, path, traces):
+    """(c) curvature command around the arc entry with the feedforward previews."""
     s_ff, ff = feedforward_profiles(path)
     ref_k = np.array([path.curvature(v) for v in s_ff])
-    ax_k.plot(s_ff, ref_k, "k--", lw=1.0, label=r"Reference $\kappa_r$")
+    ax.plot(s_ff, ref_k, "k--", lw=1.0, label=r"Reference $\kappa_r$")
     for ld, lw in zip(LOOKAHEADS, (0.8, 1.1)):
-        ax_k.plot(s_ff, ff[ld], color="0.45", lw=lw, ls=":",
-                  label=rf"$\kappa_{{\rm prev}}$, $L_d={ld:.1f}$ m")
+        ax.plot(s_ff, ff[ld], color="0.45", lw=lw, ls=":",
+                label=rf"$\kappa_{{\rm prev}}$, $L_d={ld:.1f}$ m")
     for method, ld in ARMS:
         trace = traces[arm_key(method, ld)]
         win = ((trace.path_s >= KAPPA_PANEL_WINDOW[0])
                & (trace.path_s <= KAPPA_PANEL_WINDOW[1]))
-        ax_k.plot(trace.path_s[win], trace.curvature[win],
-                  **_arm_style(method, ld))
-    ax_k.axvline(path.s_entry, color="0.5", lw=0.7, ls=":")
-    ax_k.set_xlim(*KAPPA_PANEL_WINDOW)
-    ax_k.set_xlabel(r"Reference arc length $s$ [m]")
-    ax_k.set_ylabel(r"$\kappa$ [1/m]")
-    ax_k.set_title("(c) Curvature command (corner)",
-                   fontsize=8, loc="left")
-    for ax in (ax_xy, ax_e, ax_k):
-        ax.grid(True, color="0.9", lw=0.6, ls=":")
-        ax.tick_params(labelsize=7)
-    # one legend row above the panels: reference, feedforward previews, arms
+        ax.plot(trace.path_s[win], trace.curvature[win],
+                **_arm_style(method, ld))
+    ax.axvline(path.s_entry, color="0.5", lw=0.7, ls=":")
+    ax.set_xlim(*KAPPA_PANEL_WINDOW)
+    ax.set_xlabel(r"Reference arc length $s$ [m]")
+    ax.set_ylabel(r"$\kappa$ [1/m]")
+
+
+def _legend_entries(ax_k, ax_e):
     k_handles, k_labels = ax_k.get_legend_handles_labels()
     e_handles, e_labels = ax_e.get_legend_handles_labels()
     handles = k_handles + e_handles
     labels = ["Reference" if lab.startswith("Reference") else lab
               for lab in k_labels] + e_labels
+    return handles, labels
+
+
+def make_figure(fig_dir, path, traces):
+    """Write the combined three-panel figure and, for the manuscript, one file
+    per panel (no titles or legends) plus a legend strip so that LaTeX can
+    attach sub-captions."""
+    ref = path.sample(800)
+    written = []
+
+    # combined figure (deck / preview)
+    plt.rcParams.update({"font.size": 8})
+    fig, (ax_xy, ax_e, ax_k) = plt.subplots(
+        1, 3, figsize=(7.2, 2.6), gridspec_kw={"width_ratios": [1.15, 1.0, 1.0]}
+    )
+    _draw_trajectory(ax_xy, path, traces, ref)
+    _draw_lateral_error(ax_e, path, traces)
+    _draw_curvature(ax_k, path, traces)
+    ax_xy.set_title("(a) Trajectories (inset: corner)", fontsize=8, loc="left")
+    ax_e.set_title("(b) Lateral error (entry and exit dotted)", fontsize=8,
+                   loc="left")
+    ax_k.set_title("(c) Curvature command (corner)", fontsize=8, loc="left")
+    for ax in (ax_xy, ax_e, ax_k):
+        ax.grid(True, color="0.9", lw=0.6, ls=":")
+        ax.tick_params(labelsize=7)
+    handles, labels = _legend_entries(ax_k, ax_e)
     fig.legend(handles, labels, loc="upper center", ncol=len(labels),
                fontsize=6.3, frameon=False, bbox_to_anchor=(0.5, 1.0),
                handlelength=2.2, columnspacing=1.0)
     fig.tight_layout(pad=0.3, w_pad=0.8, rect=(0.0, 0.0, 1.0, 0.92))
-    written = []
     for ext in ("pdf", "png"):
         out = fig_dir / f"{FIGURE_STEM}.{ext}"
         fig.savefig(out, dpi=300)
         written.append(out)
     plt.close(fig)
+
+    # legend strip
+    lfig = plt.figure(figsize=(7.0, 0.3))
+    lfig.legend(handles, labels, loc="center", ncol=len(labels), fontsize=6.5,
+                frameon=False, handlelength=2.2, columnspacing=1.2)
+    for ext in ("pdf", "png"):
+        out = fig_dir / f"sim_test3_legend.{ext}"
+        lfig.savefig(out, dpi=300, bbox_inches="tight", pad_inches=0.02)
+        written.append(out)
+    plt.close(lfig)
+
+    # per-panel files for LaTeX sub-captions
+    plt.rcParams.update({"font.size": 7})
+    panels = (
+        ("trajectory", (2.0, 1.9), lambda ax: _draw_trajectory(ax, path, traces, ref, inset_ticksize=4.5)),
+        ("lateral_error", (2.35, 1.8), lambda ax: _draw_lateral_error(ax, path, traces)),
+        ("curvature", (2.35, 1.8), lambda ax: _draw_curvature(ax, path, traces)),
+    )
+    for name, size, draw in panels:
+        pfig, pax = plt.subplots(figsize=size)
+        draw(pax)
+        pax.grid(True, color="0.9", lw=0.6, ls=":")
+        pax.tick_params(labelsize=6, pad=1.5)
+        pax.xaxis.label.set_size(7)
+        pax.yaxis.label.set_size(7)
+        pfig.tight_layout(pad=0.25)
+        for ext in ("pdf", "png"):
+            out = fig_dir / f"sim_test3_{name}.{ext}"
+            pfig.savefig(out, dpi=300, bbox_inches="tight", pad_inches=0.02)
+            written.append(out)
+        plt.close(pfig)
     return written
 
 
