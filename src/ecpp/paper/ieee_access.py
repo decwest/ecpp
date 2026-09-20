@@ -1,7 +1,10 @@
-"""Chapter-5 simulation generator for the IEEE Access ECPP paper.
+"""Shared simulation engine and the Test 1 / Test 4 generators of the ECPP paper.
 
-Rebuilt from the ancestor fixed-speed engine and the chapter-5 metric
-definitions in ``generate_hw_exp1_outputs.py``.
+Test numbers follow the IEEE Access paper: Test 1 is the (omega_n, zeta, L_d)
+sweep, Test 4 the method comparison at representative initial conditions.
+Test 2 (preview range) lives in ``test2_preview`` and Test 3 (phase-plane
+sweep of initial conditions) in ``test3_phase_plane``; both reuse this
+engine.
 
 Engine (frozen experiment values)
 ---------------------------------
@@ -13,7 +16,7 @@ Engine (frozen experiment values)
   {1.0, 0.5} m at the single fixed initial condition (0.15 m, 0 deg).
   Every omega_n on the axis is a named quantity (PP-equivalent at L_d=1.0,
   the reference design value at L_d=1.0, PP-equivalent at L_d=0.5).
-* Test 2 uses the design point of the hardware experiments: L_d = 1.0 m,
+* Test 4 uses the design point of the hardware experiments: L_d = 1.0 m,
   omega_n = omega_n_ref(1.0 m) = 1.029884 rad/s, zeta = 1 (nominal critical
   damping). Its initial conditions are the one-sided
   grid {0, 0.30, 2.0, 3.0 m} x {0, -90 deg} minus the origin (7 conditions):
@@ -122,9 +125,6 @@ ARC_GOAL = ARC_R * 3.0 * math.pi / 4.0   # evaluate first 135 deg
 ALPHA_MAX = 3.0      # rad/s^2
 
 PP_OMEGA_N = math.sqrt(2.0) * V0 / LD
-# reproduction/legacy test-1 operating point
-REPRO_OMEGA_N = 2.12
-REPRO_ZETA = 1.0
 
 
 # ---------------------------------------------------------------------------
@@ -581,381 +581,6 @@ def cond_encode(ey0, eth0_deg):
 
 
 # ---------------------------------------------------------------------------
-# Legacy development preview (not called by the paper CLI)
-#
-# This preserves the pre-freeze bound-probing utility for diagnostics only.
-# The manuscript source of truth is the frozen TEST 1 block below.
-# ---------------------------------------------------------------------------
-LEGACY_TEST1_LDS = (0.5, 1.0)
-LEGACY_OMEGA_RATIOS = [0.4, 0.7, 1.0]
-LEGACY_ZETAS = [0.707, 1.0, 1.5]
-LEGACY_OOB_RATIO = 1.5
-LEGACY_OOB_ZETA = 1.0
-# initial conditions COMMON across L_d: local is gate-ON for every L_d
-# (e_y <= sqrt(eps_on)*min L_d = 0.158 m), far is gate-OFF for every L_d
-# (e_y >= sqrt(eps_off)*max L_d = 0.707 m).
-LEGACY_COND_LOCAL = (0.15, 0.0)
-LEGACY_COND_FAR = (1.0, math.radians(-90))
-
-
-def legacy_test1_grid():
-    """List of (omega_n, zeta, ratio, in_bound)."""
-    combos = []
-    for r in LEGACY_OMEGA_RATIOS:
-        for z in LEGACY_ZETAS:
-            combos.append((r * OMEGA_N_MAX, z, r, True))
-    combos.append((
-        LEGACY_OOB_RATIO * OMEGA_N_MAX,
-        LEGACY_OOB_ZETA,
-        LEGACY_OOB_RATIO,
-        False,
-    ))
-    return combos
-
-
-def legacy_select_from_rows(rows, e0):
-    """Chapter-5 selection rule over metric rows measured at the local step:
-    in-bound candidates with M_os <= 0.05 E0, minimum T_s, ties by kappa_max.
-    Falls back to min T_s over all in-bound rows if none are feasible.
-    Returns (selected_row, relaxed_flag)."""
-    big = 1e9
-
-    def ts_key(r):
-        return (r["T_s"] if r.get("T_s") is not None else big, r["kappa_max"])
-
-    inb = [r for r in rows if r["in_bound"]]
-    feasible = [r for r in inb
-                if r.get("M_os") is not None and r["M_os"] <= 0.05 * e0]
-    if feasible:
-        return min(feasible, key=ts_key), False
-    return min(inb, key=ts_key), True
-
-
-def legacy_write_test1_sweep_table(path_out, rows_by_ld, caption_cond):
-    """rows_by_ld: {ld: (rows, omega_n_max)}. One merged booktabs table with a
-    subheader block per L_d (mirrors the test-2 per-condition blocks)."""
-    lines = [
-        r"\begin{tabular}{@{}lllllllllll@{}}",
-        r"\toprule",
-        r"$\omega_n$ & $\zeta$ & $\omega_n/\omega_n^{\max}$ & $\bar e_y$ & "
-        r"$\bar e_\theta$ & $T_r$ & $T_s$ & $M_\mathrm{os}$ & $T_m$ & "
-        r"$\kappa_{\max}$ & sat.[\%] \\",
-    ]
-
-    def row_cells(r, dagger=False):
-        return [
-            f(r["omega_n"], 3) + (r"$^{\dagger}$" if dagger else ""),
-            f(r["zeta"], 3), f(r["ratio"], 2),
-            f(r["bar_e_y"], 3), f(r["bar_e_theta_deg"], 2),
-            f(r.get("T_r"), 2), f(r.get("T_s"), 2), f(r.get("M_os"), 3),
-            f(r.get("T_m"), 2), f(r["kappa_max"], 2),
-            f(100 * r["sat_ratio"], 1),
-        ]
-
-    def row_marked(r, marker):
-        cells = row_cells(r)
-        cells[0] += marker
-        return cells
-
-    oob_ratios = set()
-    for ld, (rows, wn_max) in sorted(rows_by_ld.items()):
-        lines.append(r"\midrule")
-        lines.append(
-            r"\multicolumn{11}{@{}l@{}}{$L_d=" + f"{ld:.2f}"
-            + r"\,\mathrm{m}\ (\omega_n^{\max}=" + f"{wn_max:.3f}"
-            + r"\,\mathrm{rad/s})$} \\")
-        lines.append(r"\midrule")
-        for r in [x for x in rows if x.get("is_pp")]:
-            lines.append(" & ".join(row_marked(r, r"$^{\ddagger}$")) + r"\\")
-        for r in [x for x in rows if x["in_bound"] and not x.get("is_pp")]:
-            lines.append(" & ".join(row_cells(r)) + r"\\")
-        for r in [x for x in rows if not x["in_bound"] and not x.get("is_pp")]:
-            oob_ratios.add(r["ratio"])
-            lines.append(" & ".join(row_marked(r, r"$^{\dagger}$")) + r"\\")
-    oob_txt = ", ".join(f"{x:.3g}" for x in sorted(oob_ratios)) or "1.5"
-    lines += [
-        r"\bottomrule",
-        r"\multicolumn{11}{@{}l@{}}{\footnotesize $^{\ddagger}$"
-        r" PP reference (implicit local gains: "
-        r"$\omega_{n,\mathrm{PP}}=\sqrt{2}v_0/L_d$, $\zeta=0.707$).}\\",
-        r"\multicolumn{11}{@{}l@{}}{\footnotesize $^{\dagger}$"
-        r" out-of-bound reference ($\omega_n=" + oob_txt
-        + r"\,\omega_n^{\max}$).}\\",
-        r"\end{tabular}",
-        "",
-    ]
-    path_out.write_text("\n".join(lines), encoding="utf-8")
-
-
-def legacy_write_test1_selection(path_out, sel):
-    lines = [
-        r"\begin{tabular}{@{}llllllll@{}}",
-        r"\toprule",
-        r"Criterion & $L_d$ & $\omega_n$ & $\zeta$ & "
-        r"$\omega_n/\omega_n^{\max}$ & $T_s$ & $M_\mathrm{os}$ & "
-        r"$\kappa_{\max}$ \\",
-        r"\midrule",
-    ]
-    lines.append(" & ".join([
-        r"selected ($M_\mathrm{os}\!\le\!0.05E_0$, min $T_s$)",
-        f(sel["ld"], 2),
-        f(sel["omega_n"], 3), f(sel["zeta"], 3), f(sel["ratio"], 2),
-        f(sel.get("T_s"), 2), f(sel.get("M_os"), 3), f(sel["kappa_max"], 2),
-    ]) + r"\\")
-    lines += [r"\bottomrule", r"\end{tabular}", ""]
-    path_out.write_text("\n".join(lines), encoding="utf-8")
-
-
-def legacy_fig_test1_step_response(fig_dir, straight, tag=""):
-    """(a) e_y across omega_n at zeta=1.0 (+OOB, analytic overlay),
-    (b) e_y across zeta at the middle omega_n ratio, (c) commanded omega for
-    the omega_n family with +/- omega_max lines. Local condition."""
-    plt.rcParams.update({"font.size": 8})
-    fig, axes = plt.subplots(3, 1, figsize=(3.5, 6.0))
-    ey0, eth0 = LEGACY_COND_LOCAL
-    cmap = plt.get_cmap("viridis")
-
-    # (a) omega_n family at zeta = 1.0
-    ax = axes[0]
-    for i, r in enumerate(LEGACY_OMEGA_RATIOS):
-        wn = r * OMEGA_N_MAX
-        _, arr, _ = run_metrics(straight, "ECPP", wn, 1.0, ey0, eth0)
-        t, ey = arr[:, 0], arr[:, 5]
-        col = cmap(i / (len(LEGACY_OMEGA_RATIOS) - 1) * 0.85)
-        ax.plot(t, ey, color=col, lw=1.1,
-                label=fr"${r:.1f}\,\omega_n^{{\max}}$")
-        tt = np.linspace(0, t[-1], 400)
-        ax.plot(tt, second_order_response(tt, ey0, wn, 1.0),
-                color=col, lw=0.8, ls="--", alpha=0.75)
-    # OOB
-    wn = LEGACY_OOB_RATIO * OMEGA_N_MAX
-    _, arr, _ = run_metrics(
-        straight, "ECPP", wn, LEGACY_OOB_ZETA, ey0, eth0
-    )
-    ax.plot(arr[:, 0], arr[:, 5], color="crimson", lw=1.2,
-            label=fr"${LEGACY_OOB_RATIO:.3g}\,\omega_n^{{\max}}\,^{{\dagger}}$")
-    ax.axhline(0.0, color="0.7", lw=0.6)
-    ax.set_ylabel(r"$e_y$ [m]")
-    ax.set_title(r"(a) $\omega_n$ sweep ($\zeta{=}1.0$)", fontsize=8)
-    ax.legend(fontsize=5.5, loc="best", ncol=2, framealpha=0.85)
-
-    # (b) zeta family at the middle omega_n ratio
-    ax = axes[1]
-    wn = LEGACY_OMEGA_RATIOS[-2] * OMEGA_N_MAX
-    for i, z in enumerate(LEGACY_ZETAS):
-        _, arr, _ = run_metrics(straight, "ECPP", wn, z, ey0, eth0)
-        col = cmap(i / (len(LEGACY_ZETAS) - 1) * 0.85)
-        ax.plot(arr[:, 0], arr[:, 5], color=col, lw=1.1,
-                label=fr"$\zeta={z:.3g}$")
-    ax.axhline(0.0, color="0.7", lw=0.6)
-    ax.set_ylabel(r"$e_y$ [m]")
-    ax.set_title(fr"(b) $\zeta$ sweep ($\omega_n{{=}}{0.8 * OMEGA_N_MAX:.3f}$)",
-                 fontsize=8)
-    ax.legend(fontsize=6, loc="best", framealpha=0.85)
-
-    # (c) commanded omega for the omega_n family (zeta = 1.0)
-    ax = axes[2]
-    for i, r in enumerate(LEGACY_OMEGA_RATIOS):
-        wn = r * OMEGA_N_MAX
-        _, arr, _ = run_metrics(straight, "ECPP", wn, 1.0, ey0, eth0)
-        col = cmap(i / (len(LEGACY_OMEGA_RATIOS) - 1) * 0.85)
-        ax.plot(arr[:, 0], arr[:, 8], color=col, lw=1.0,
-                label=fr"${r:.1f}\,\omega_n^{{\max}}$")
-    wn = LEGACY_OOB_RATIO * OMEGA_N_MAX
-    _, arr, _ = run_metrics(
-        straight, "ECPP", wn, LEGACY_OOB_ZETA, ey0, eth0
-    )
-    ax.plot(arr[:, 0], arr[:, 8], color="crimson", lw=1.1,
-            label=fr"${LEGACY_OOB_RATIO:.3g}\,\omega_n^{{\max}}\,^{{\dagger}}$")
-    ax.axhline(OMEGA_MAX, color="0.5", lw=0.7, ls=":")
-    ax.axhline(-OMEGA_MAX, color="0.5", lw=0.7, ls=":")
-    ax.set_ylabel(r"$\omega_\mathrm{cmd}$ [rad/s]")
-    ax.set_xlabel(r"$t$ [s]")
-    ax.set_title(r"(c) commanded $\omega$ ($\zeta{=}1.0$)", fontsize=8)
-    ax.legend(fontsize=5.5, loc="best", ncol=2, framealpha=0.85)
-
-    for ax in axes:
-        ax.grid(True, color="0.9", lw=0.5)
-        ax.tick_params(labelsize=7)
-    fig.tight_layout(pad=0.4)
-    for ext in ("pdf", "png"):
-        fig.savefig(fig_dir / f"sim_test1_step_response{tag}.{ext}", dpi=300)
-    plt.close(fig)
-
-
-def legacy_fig_test1_bound_validation(
-    fig_dir, rows_local, rows_far, rows_probe, e_star, tag=""
-):
-    """omega_n-zeta plane: grid points colored by measured sat_ratio; theory
-    curves omega_n_max(zeta; ebar_g, sbar) for sbar in {0, 0.5}; the OOB point
-    is circled. Three panels: (a) local step and (b) far capture show that the
-    descending gate keeps even the OOB command unsaturated in these mild
-    conditions, while (c) the gate-envelope worst-case step e=e_star exercises
-    the compensation and makes the OOB point visibly saturate -- the situation
-    the rate bound governs."""
-    plt.rcParams.update({"font.size": 8})
-    fig, axes = plt.subplots(1, 3, figsize=(7.2, 2.9), sharey=True)
-    zz = np.linspace(0.6, 1.6, 120)
-    loc_lbl = (r"(a) local step (%.4g m, $%d^\circ$)"
-               % (LEGACY_COND_LOCAL[0],
-                  round(math.degrees(LEGACY_COND_LOCAL[1]))))
-    far_lbl = (r"(b) far (%.4g m, $%d^\circ$)"
-               % (LEGACY_COND_FAR[0],
-                  round(math.degrees(LEGACY_COND_FAR[1]))))
-    panels = [
-        (rows_local, loc_lbl),
-        (rows_far, far_lbl),
-        (rows_probe, r"(c) envelope worst case ($e{=}%.2f$ m)" % e_star),
-    ]
-    all_sat = [100 * r["sat_ratio"] for rows, _ in panels for r in rows]
-    vmax = max(1.0, max(all_sat))
-    sc = None
-    for ax, (rows, title) in zip(axes, panels):
-        zs = [r["zeta"] for r in rows]
-        ws = [r["omega_n"] for r in rows]
-        sat = [100 * r["sat_ratio"] for r in rows]
-        sc = ax.scatter(zs, ws, c=sat, cmap="viridis", vmin=0, vmax=vmax,
-                        s=55, edgecolors="k", linewidths=0.5, zorder=3)
-        for r in rows:
-            # star = command actually reaches the clip (peak demand >= omega_max)
-            if r["peak_omega_ratio"] >= 1.0:
-                ax.scatter([r["zeta"]], [r["omega_n"]], marker="*", s=95,
-                           color="crimson", edgecolors="k", linewidths=0.4,
-                           zorder=5)
-            if not r["in_bound"]:
-                ax.scatter([r["zeta"]], [r["omega_n"]], s=170,
-                           facecolors="none", edgecolors="crimson",
-                           linewidths=1.6, zorder=4)
-        ax.plot(zz, [omega_n_max(z, EBAR_G, 0.0) for z in zz],
-                "b-", lw=1.1, label=r"$\omega_n^{\max}(\bar s{=}0)$")
-        ax.plot(zz, [omega_n_max(z, EBAR_G, 0.5) for z in zz],
-                "g--", lw=1.1, label=r"$\omega_n^{\max}(\bar s{=}0.5)$")
-        ax.set_xlabel(r"$\zeta$")
-        ax.set_title(title, fontsize=7.5)
-        ax.grid(True, color="0.9", lw=0.5)
-        ax.tick_params(labelsize=7)
-        ax.legend(fontsize=5.5, loc="upper right")
-    axes[0].set_ylabel(r"$\omega_n$ [rad/s]")
-    cb = fig.colorbar(sc, ax=axes, fraction=0.03, pad=0.02)
-    cb.set_label("sat. ratio [%]", fontsize=7)
-    cb.ax.tick_params(labelsize=6)
-    # legend note for the saturation star
-    axes[-1].scatter([], [], marker="*", s=95, color="crimson",
-                     edgecolors="k", linewidths=0.4,
-                     label=r"peak $|\omega|\geq\omega_{\max}$")
-    axes[-1].legend(fontsize=5.0, loc="upper right")
-    for ext in ("pdf", "png"):
-        fig.savefig(fig_dir / f"sim_test1_bound_validation{tag}.{ext}",
-                    dpi=300)
-    plt.close(fig)
-
-
-def run_legacy_test1_preview(table_dir, fig_dir):
-    """Development-only legacy bound probe; never called by the paper CLI.
-
-    Sweep (omega_n, zeta) for every L_d in LEGACY_TEST1_LDS with initial
-    conditions COMMON across L_d, write the merged tables, per-L_d figures,
-    and the cross-L_d selection."""
-    local_by_ld, far_by_ld = {}, {}
-    per_ld_meta, all_local = {}, []
-    for ld in LEGACY_TEST1_LDS:
-        configure(ld=ld)
-        tag = f"_ld{ld:g}".replace(".", "p")
-        straight = StraightPath()
-        e_star = worst_effective_error()
-        rows_local, rows_far, rows_probe = [], [], []
-        for wn, z, ratio, inb in legacy_test1_grid():
-            ml, _, _ = run_metrics(
-                straight, "ECPP", wn, z, *LEGACY_COND_LOCAL
-            )
-            mf, _, _ = run_metrics(
-                straight, "ECPP", wn, z, *LEGACY_COND_FAR
-            )
-            mp, _, _ = run_metrics(straight, "ECPP", wn, z, e_star, 0.0)
-            for m in (ml, mf, mp):
-                m.update({"ratio": ratio, "in_bound": inb, "ld": ld})
-            rows_local.append(ml)
-            rows_far.append(mf)
-            rows_probe.append(mp)
-        # PP reference rows (baseline of each L_d block; implicit local gains
-        # omega_n_PP = sqrt(2) v0 / L_d, zeta_PP = 0.707)
-        zeta_pp = 1.0 / math.sqrt(2.0)
-        ppl, _, _ = run_metrics(straight, "PP", PP_OMEGA_N, zeta_pp,
-                                *LEGACY_COND_LOCAL)
-        ppf, _, _ = run_metrics(straight, "PP", PP_OMEGA_N, zeta_pp,
-                                *LEGACY_COND_FAR)
-        for m in (ppl, ppf):
-            m.update({"ratio": PP_OMEGA_N / OMEGA_N_MAX, "in_bound": False,
-                      "is_pp": True, "ld": ld})
-        local_by_ld[ld] = ([ppl] + rows_local, OMEGA_N_MAX)
-        far_by_ld[ld] = ([ppf] + rows_far, OMEGA_N_MAX)
-        all_local += rows_local
-        legacy_fig_test1_step_response(fig_dir, straight, tag)
-        legacy_fig_test1_bound_validation(
-            fig_dir, rows_local, rows_far, rows_probe, e_star, tag
-        )
-        per_ld_meta[str(ld)] = {
-            "ebar_g": EBAR_G, "omega_n_max": OMEGA_N_MAX,
-            "omega_n_pp": PP_OMEGA_N,
-            "guaranteed_headroom": OMEGA_N_MAX >= PP_OMEGA_N,
-            "accel_bound_zeta1": omega_n_accel_bound(1.0, EBAR_G),
-            "worst_effective_error_e_star": e_star,
-            "local": rows_local, "far": rows_far,
-            "envelope_probe": rows_probe,
-            "pp_reference_local": ppl, "pp_reference_far": ppf,
-        }
-
-    legacy_write_test1_sweep_table(
-        table_dir / "legacy_sim_test1_sweep_local.tex", local_by_ld, "local"
-    )
-    legacy_write_test1_sweep_table(
-        table_dir / "legacy_sim_test1_sweep_far.tex", far_by_ld, "far"
-    )
-
-    # cross-L_d selection: in-bound, M_os <= 0.05 E0 (local), min T_s,
-    # tie min kappa_max — common conditions make T_s comparable across L_d
-    sel, relaxed = legacy_select_from_rows(all_local, LEGACY_COND_LOCAL[0])
-    legacy_write_test1_selection(
-        table_dir / "legacy_sim_test1_selection.tex", sel
-    )
-
-    meta = {
-        "v0": V0, "omega_max": OMEGA_MAX,
-        "test1_lds": list(LEGACY_TEST1_LDS),
-        "dt": DT, "v_epsilon": V_EPSILON,
-        "eps_on": EPS_ON, "eps_off": EPS_OFF,
-        "omega_n_max_formula": (
-            "v*sqrt(omega_budget/(v*ebar_g)) (paper basis, omega_n at v0); "
-            "plugin value = omega_n*(abs(v)+v_epsilon)/abs(v)"
-        ),
-        "alpha_max_assumed": ALPHA_MAX,
-        "omega_ratios": LEGACY_OMEGA_RATIOS, "zetas": LEGACY_ZETAS,
-        "oob_ratio": LEGACY_OOB_RATIO, "oob_zeta": LEGACY_OOB_ZETA,
-        "cond_local": [
-            LEGACY_COND_LOCAL[0], math.degrees(LEGACY_COND_LOCAL[1])
-        ],
-        "cond_far": [
-            LEGACY_COND_FAR[0], math.degrees(LEGACY_COND_FAR[1])
-        ],
-        "selection_relaxed": relaxed,
-        "notes": (
-            "sat_ratio = fraction of eval steps with |omega_raw| >= "
-            "omega_max before clipping. Initial conditions are common across "
-            "L_d (local gate-ON for every L_d, far gate-OFF for every L_d) "
-            "so T_s is directly comparable and the selection ranges over "
-            "(omega_n, zeta, L_d). The gate-envelope worst-case step e=e_star "
-            "(argmax sigma(e) e) exercises the compensation and makes the "
-            "OOB command saturate, validating the rate bound."
-        ),
-    }
-    meta["carrot_rule"] = "continuous_arc_length"
-    out = {"meta": meta, "selected": sel, "per_ld": per_ld_meta}
-    (table_dir / "legacy_sim_test1_metrics.json").write_text(
-        json.dumps(_clean(out), indent=2), encoding="utf-8")
-    return sel, relaxed
-
-
-# ---------------------------------------------------------------------------
 # Frozen chapter-6 hardware-experiment-1 arm definitions.  These constants
 # drive run_hw_reference() (the sim reference traces for the hardware arms)
 # and also name the omega_n axis of the test-1 grid below.
@@ -981,8 +606,8 @@ GRID_PP_OMEGA_N_LD05 = math.sqrt(2.0) * V0 / GRID_LD_SHORT
 # The fixed initial condition keeps the gate nearly fully on for BOTH lookaheads
 # ((0.15/0.5)^2 = 0.09 < eps_on = 0.10), so every cell starts in the linear
 # nominal-design region; saturation phenomenology is exercised by the far
-# test-2 conditions instead.  Test 1 is a parameter study only; it does not
-# select the test-2 operating point.
+# test-4 conditions instead.  Test 1 is a parameter study only; it does not
+# select the test-4 operating point.
 # ---------------------------------------------------------------------------
 GRID_LDS = (1.0, GRID_LD_SHORT)
 GRID_COND = (0.15, 0.0)
@@ -1398,14 +1023,14 @@ def run_test1(table_dir, fig_dir, trace_dir=None):
 
 
 # ---------------------------------------------------------------------------
-# TEST 2 : method comparison on straight and smooth R=3 m arc
+# TEST 4 : method comparison on straight and smooth R=3 m arc
 # ---------------------------------------------------------------------------
-TEST2_METHODS = ["PP", "DPP", "ECPP w/o gate", "ECPP"]
-# Operating point shared with the hardware experiments and test 3: the
+TEST4_METHODS = ["PP", "DPP", "ECPP w/o gate", "ECPP"]
+# Operating point shared with the hardware experiments and Test 2: the
 # reference design value at L_d = 1.0 m with nominal critical damping.
-TEST2_LD = SPEED_LD
-TEST2_OMEGA_N = SPEED_OMEGA_N_MAX
-TEST2_ZETA = 1.0
+TEST4_LD = SPEED_LD
+TEST4_OMEGA_N = SPEED_OMEGA_N_MAX
+TEST4_ZETA = 1.0
 # One-sided initial-condition grid minus the trivial origin.  Mirror-symmetric
 # negative offsets / positive headings are omitted.  e_y = 0 rows exercise the
 # pure-heading response, where the e_y-driven gate starts fully open and the
@@ -1413,36 +1038,47 @@ TEST2_ZETA = 1.0
 # 0.30 m keeps the gate open (sigma = 0.99, the hardware local amplitude),
 # 2.0 m starts with negligible compensation (|e_y|/L_d = 2), and 3.0 m
 # probes approach from a larger tracking error.
-TEST2_EY0S = (0.0, 0.30, 2.0, 3.0)
-TEST2_ETH0_DEGS = (0.0, -90.0)
-TEST2_CONDS = [
+TEST4_EY0S = (0.0, 0.30, 2.0, 3.0)
+TEST4_ETH0_DEGS = (0.0, -90.0)
+TEST4_CONDS = [
     (ey0, math.radians(deg))
-    for ey0 in TEST2_EY0S
-    for deg in TEST2_ETH0_DEGS
+    for ey0 in TEST4_EY0S
+    for deg in TEST4_ETH0_DEGS
     if not (ey0 == 0.0 and deg == 0.0)
 ]
-REP_CONDS = TEST2_CONDS
+# Conditions shown in the manuscript tables (the 2.0 m rows stay in the full
+# tables and in the JSON).
+TEST4_DISPLAY_EY0S = (0.0, 0.30, 3.0)
+TEST4_DISPLAY_CONDS = [c for c in TEST4_CONDS if c[0] in TEST4_DISPLAY_EY0S]
 METHOD_COLORS = {"PP": "#d62728", "DPP": "#1f77b4",
                  "ECPP w/o gate": "#2ca02c", "ECPP": "#9467bd"}
 
 
-def write_test2_table(path_out, results):
+def write_test4_table(path_out, results, conds=None, two_line_header=False):
     """Write the compact method-comparison table for one path.
 
     ``--`` marks metrics that are undefined by construction (the
     initial-error-normalized transients when e_y(0) = 0); ``n/r`` marks
     metrics whose event was not reached inside the evaluation interval.
+    ``conds`` restricts the condition blocks (the manuscript shows
+    ``TEST4_DISPLAY_CONDS``), and ``two_line_header`` splits the header into
+    a symbol line and a unit line so the table can be typeset narrower.
     """
-    lines = [
-        r"\begin{tabular}{@{}lrrrrrrr@{}}",
-        r"\toprule",
-        r"Method & $\bar e_y$ [m] & $\bar e_\theta$ [$^\circ$] & "
-        r"$T_r$ [s] & $T_s^{2\%}$ [s] & $M_\mathrm{os}$ [m] & "
-        r"$\kappa_{\max}$ [1/m] & Sat. [\%] \\",
-        r"\midrule",
-    ]
+    if two_line_header:
+        header = [
+            r"Method & $\bar e_y$ & $\bar e_\theta$ & $T_r$ & $T_s^{2\%}$ & "
+            r"$M_\mathrm{os}$ & $\kappa_{\max}$ & Sat. \\",
+            r" & [m] & [$^\circ$] & [s] & [s] & [m] & [1/m] & [\%] \\",
+        ]
+    else:
+        header = [
+            r"Method & $\bar e_y$ [m] & $\bar e_\theta$ [$^\circ$] & "
+            r"$T_r$ [s] & $T_s^{2\%}$ [s] & $M_\mathrm{os}$ [m] & "
+            r"$\kappa_{\max}$ [1/m] & Sat. [\%] \\",
+        ]
+    lines = [r"\begin{tabular}{@{}lrrrrrrr@{}}", r"\toprule", *header, r"\midrule"]
     first = True
-    for (ey0, eth0) in TEST2_CONDS:
+    for (ey0, eth0) in (TEST4_CONDS if conds is None else conds):
         if not first:
             lines.append(r"\addlinespace[1pt]")
         first = False
@@ -1452,7 +1088,7 @@ def write_test2_table(path_out, results):
         lines.append(
             r"\multicolumn{8}{@{}l}{$e_y(0)=" + f"{ey0:.2f}" +
             r"\,\mathrm{m},\ e_\theta(0)=" + f"{deg}" + r"^\circ$} \\")
-        for method in TEST2_METHODS:
+        for method in TEST4_METHODS:
             m = results[(method, ey0, deg)]
             lines.append(" & ".join([
                 method,
@@ -1479,7 +1115,7 @@ def make_by_condition_panels(fig_dir, path, omega_n, zeta, ey0, eth0):
     """
     runs = {}
     t_evals = []
-    for method in TEST2_METHODS:
+    for method in TEST4_METHODS:
         m, arr, _ = run_metrics(path, method, omega_n, zeta, ey0, eth0)
         runs[method] = arr
         if m.get("T_eval") is not None:
@@ -1523,12 +1159,12 @@ def make_by_condition_panels(fig_dir, path, omega_n, zeta, ey0, eth0):
 
     _write_condition_row(fig_dir, stem, runs, ref, (x_lo, x_hi), (y_lo, y_hi),
                          t_plot, trajectory_aspect=trajectory_aspect)
-    _write_test2_legend(fig_dir)
+    _write_test4_legend(fig_dir)
 
     # trajectory; far starts get an inset of the approach to the path
     fig, ax = newfig()
     ax.plot(ref[:, 0], ref[:, 1], "k--", lw=0.9)
-    for method in TEST2_METHODS:
+    for method in TEST4_METHODS:
         arr = runs[method]
         ax.plot(arr[:, 1], arr[:, 2], color=METHOD_COLORS[method], lw=0.9)
     ax.set_xlabel(r"$x$ [m]"); ax.set_ylabel(r"$y$ [m]")
@@ -1541,7 +1177,7 @@ def make_by_condition_panels(fig_dir, path, omega_n, zeta, ey0, eth0):
 
     # sigma
     fig, ax = newfig()
-    for method in TEST2_METHODS:
+    for method in TEST4_METHODS:
         arr = runs[method]
         ax.plot(arr[:, 0], arr[:, 10], color=METHOD_COLORS[method], lw=0.9)
     ax.set_xlabel(r"$t$ [s]"); ax.set_ylabel(r"$\sigma$")
@@ -1551,7 +1187,7 @@ def make_by_condition_panels(fig_dir, path, omega_n, zeta, ey0, eth0):
 
     # kappa (unclipped command; dotted lines = the rate limit kappa_bar = omega_max / v0)
     fig, ax = newfig()
-    for method in TEST2_METHODS:
+    for method in TEST4_METHODS:
         arr = runs[method]
         ax.plot(arr[:, 0], arr[:, 7], color=METHOD_COLORS[method], lw=0.9)
     ax.axhline(OMEGA_MAX / V0, color="0.5", lw=0.7, ls=":")
@@ -1562,7 +1198,7 @@ def make_by_condition_panels(fig_dir, path, omega_n, zeta, ey0, eth0):
 
     # error_y
     fig, ax = newfig()
-    for method in TEST2_METHODS:
+    for method in TEST4_METHODS:
         arr = runs[method]
         ax.plot(arr[:, 0], arr[:, 5], color=METHOD_COLORS[method], lw=0.9)
     ax.axhline(0.0, color="0.7", lw=0.6)
@@ -1572,7 +1208,7 @@ def make_by_condition_panels(fig_dir, path, omega_n, zeta, ey0, eth0):
 
     # error_psi
     fig, ax = newfig()
-    for method in TEST2_METHODS:
+    for method in TEST4_METHODS:
         arr = runs[method]
         ax.plot(arr[:, 0], np.degrees(arr[:, 6]),
                 color=METHOD_COLORS[method], lw=0.9)
@@ -1583,7 +1219,7 @@ def make_by_condition_panels(fig_dir, path, omega_n, zeta, ey0, eth0):
 
     # raw requested omega (the state update uses the separately stored clip)
     fig, ax = newfig()
-    for method in TEST2_METHODS:
+    for method in TEST4_METHODS:
         arr = runs[method]
         ax.plot(arr[:, 0], arr[:, 9], color=METHOD_COLORS[method], lw=0.9)
     ax.axhline(OMEGA_MAX, color="0.5", lw=0.7, ls=":")
@@ -1593,17 +1229,17 @@ def make_by_condition_panels(fig_dir, path, omega_n, zeta, ey0, eth0):
     finish(fig, ax, "omega")
 
 
-def _write_test2_legend(fig_dir):
-    """Legend strip shared by the per-condition panels of test 2."""
+def _write_test4_legend(fig_dir):
+    """Legend strip shared by the per-condition panels of test 4."""
     from matplotlib.lines import Line2D
     handles = [Line2D([], [], color="k", ls="--", lw=0.9, label="Reference")]
     handles += [Line2D([], [], color=METHOD_COLORS[m], lw=1.2, label=m)
-                for m in TEST2_METHODS]
+                for m in TEST4_METHODS]
     fig = plt.figure(figsize=(5.0, 0.3))
     fig.legend(handles=handles, loc="center", ncol=len(handles), fontsize=7,
                frameon=False, columnspacing=1.6)
     for ext in ("pdf", "png"):
-        fig.savefig(fig_dir / f"test2_legend.{ext}", dpi=300,
+        fig.savefig(fig_dir / f"sim_test4_legend.{ext}", dpi=300,
                     bbox_inches="tight", pad_inches=0.02)
     plt.close(fig)
 
@@ -1644,7 +1280,7 @@ def _add_near_path_inset(ax, runs, ref, near_m=0.1, along_m=1.0):
     x_lo, x_hi = ax.get_xlim(); y_lo, y_hi = ax.get_ylim()
     ax.figure.canvas.draw()  # datalim aspect may have widened the limits
     x_lo, x_hi = ax.get_xlim(); y_lo, y_hi = ax.get_ylim()
-    traces = np.vstack([runs[m][:, 1:3] for m in TEST2_METHODS])
+    traces = np.vstack([runs[m][:, 1:3] for m in TEST4_METHODS])
     candidates = [
         (0.50, 0.46, 0.48, 0.50), (0.08, 0.46, 0.48, 0.50),
         (0.50, 0.02, 0.48, 0.50), (0.08, 0.02, 0.48, 0.50),
@@ -1662,7 +1298,7 @@ def _add_near_path_inset(ax, runs, ref, near_m=0.1, along_m=1.0):
     box = min(candidates, key=cost)
     axins = ax.inset_axes(list(box))
     axins.plot(ref[:, 0], ref[:, 1], "k--", lw=0.8)
-    for method in TEST2_METHODS:
+    for method in TEST4_METHODS:
         arr = runs[method]
         axins.plot(arr[:, 1], arr[:, 2], color=METHOD_COLORS[method], lw=0.9)
     axins.set_xlim(wx0, wx1); axins.set_ylim(wy0, wy1)
@@ -1677,13 +1313,13 @@ def _write_condition_row(fig_dir, stem, runs, ref, xlim, ylim, t_plot,
                          trajectory_aspect="equal"):
     """One 1x4 row (trajectory, gate, lateral error, curvature command) with a
     single method legend above the panels; this is the figure the manuscript
-    embeds for each test-2 condition."""
+    embeds for each test-4 condition."""
     plt.rcParams.update({"font.size": 8})
     (x_lo, x_hi), (y_lo, y_hi) = xlim, ylim
     fig, axes = plt.subplots(1, 4, figsize=(7.2, 1.9))
     ax_xy, ax_sig, ax_ey, ax_k = axes
     ax_xy.plot(ref[:, 0], ref[:, 1], "k--", lw=0.9, label="Reference")
-    for method in TEST2_METHODS:
+    for method in TEST4_METHODS:
         arr = runs[method]
         ax_xy.plot(arr[:, 1], arr[:, 2], color=METHOD_COLORS[method], lw=1.0,
                    label=method)
@@ -1722,15 +1358,15 @@ def _write_condition_row(fig_dir, stem, runs, ref, xlim, ylim, t_plot,
     plt.close(fig)
 
 
-def run_test2(table_dir, fig_dir, omega_n, zeta, ld=None):
+def run_test4(table_dir, fig_dir, omega_n, zeta, ld=None):
     if ld is not None:
         configure(ld=ld)
-    bycond_dir = fig_dir / "by_condition"
+    bycond_dir = fig_dir / "sim_test4_by_condition"
     bycond_dir.mkdir(parents=True, exist_ok=True)
     paths = {"straight": StraightPath(), "arc": ArcPath()}
     dpp_l1, dpp_l2, dpp_a1, dpp_a2, _ = dpp_parameters(omega_n, zeta, ld=LD)
     json_out = {"meta": {"omega_n": omega_n, "zeta": zeta, "ld": LD,
-                         "omega_max": OMEGA_MAX, "methods": TEST2_METHODS,
+                         "omega_max": OMEGA_MAX, "methods": TEST4_METHODS,
                          "dpp": {"definition": (
                              "vehicle-axis preview points; e_p,i = lateral "
                              "deviation of the point from the path; "
@@ -1752,30 +1388,33 @@ def run_test2(table_dir, fig_dir, omega_n, zeta, ld=None):
                          "acceleration_model": None,
                          "conditions": [
                              [ey, math.degrees(epsi)]
-                             for ey, epsi in TEST2_CONDS
+                             for ey, epsi in TEST4_CONDS
                          ],
-                         "condition_count_per_path": len(TEST2_CONDS),
-                         "method_count": len(TEST2_METHODS),
+                         "condition_count_per_path": len(TEST4_CONDS),
+                         "method_count": len(TEST4_METHODS),
                          "path_count": 2,
                          "total_run_count": (
-                             len(TEST2_CONDS) * len(TEST2_METHODS) * 2
+                             len(TEST4_CONDS) * len(TEST4_METHODS) * 2
                          )}, "paths": {}}
     json_out["meta"]["carrot_rule"] = "continuous_arc_length"
     for key, path in paths.items():
         results = {}
         table_rows = {}
-        for (ey0, eth0) in TEST2_CONDS:
+        for (ey0, eth0) in TEST4_CONDS:
             deg = round(math.degrees(eth0))
-            for method in TEST2_METHODS:
+            for method in TEST4_METHODS:
                 m, _, _ = run_metrics(path, method, omega_n, zeta, ey0, eth0)
                 results[(method, ey0, deg)] = m
                 table_rows[f"{method}|{ey0}|{deg}"] = m
-        write_test2_table(
-            table_dir / f"sim_test2_results_{key}.tex", results)
+        write_test4_table(
+            table_dir / f"sim_test4_results_{key}.tex", results)
+        write_test4_table(
+            table_dir / f"sim_test4_results_{key}_display.tex", results,
+            conds=TEST4_DISPLAY_CONDS, two_line_header=True)
         json_out["paths"][key] = table_rows
-        for (ey0, eth0) in REP_CONDS:
+        for (ey0, eth0) in TEST4_CONDS:
             make_by_condition_panels(bycond_dir, path, omega_n, zeta, ey0, eth0)
-    (table_dir / "sim_test2_metrics.json").write_text(
+    (table_dir / "sim_test4_metrics.json").write_text(
         json.dumps(_clean(json_out), indent=2), encoding="utf-8")
 
 
@@ -1850,37 +1489,6 @@ def run_hw_reference(table_dir, trace_root):
 
 
 # ---------------------------------------------------------------------------
-# Validation: engine reproduction against the current test-1 straight table
-# ---------------------------------------------------------------------------
-def run_reproduction():
-    # Diagnostic only; this legacy point is not part of the frozen experiments.
-    saved = (OMEGA_MAX, LD)
-    configure(omega_max=1.5, ld=1.0)
-    straight = StraightPath()
-    conds = [(0.0, -30), (0.0, -90), (0.3, 0), (0.3, -30), (0.3, -90),
-             (1.0, 0), (1.0, -30), (1.0, -90)]
-    methods = ["PP", "DPP", "ECPP w/o gate", "ECPP"]
-    print(f"\n=== Engine reproduction (omega_n={REPRO_OMEGA_N}, "
-          f"zeta={REPRO_ZETA}, Ld={LD}, omega_max={OMEGA_MAX}) ===")
-    print(f"{'cond':>12} {'method':>14} "
-          f"{'e_y':>7}{'e_th':>7}{'Ts':>7}{'Tr':>7}{'Mos':>7}"
-          f"{'Tm':>7}{'kmax':>7}")
-    rep = {}
-    for (ey0, deg) in conds:
-        for method in methods:
-            m, _, _ = run_metrics(straight, method, REPRO_OMEGA_N, REPRO_ZETA,
-                                  ey0, math.radians(deg))
-            rep[(ey0, deg, method)] = m
-            print(f"{ey0:5.2f},{deg:>4}  {method:>14} "
-                  f"{f(m['bar_e_y'],3):>7}{f(m['bar_e_theta_deg'],2):>7}"
-                  f"{f(m.get('T_s'),2):>7}{f(m.get('T_r'),2):>7}"
-                  f"{f(m.get('M_os'),3):>7}{f(m.get('T_m'),2):>7}"
-                  f"{f(m['kappa_max'],2):>7}")
-    configure(omega_max=saved[0], ld=saved[1])
-    return rep
-
-
-# ---------------------------------------------------------------------------
 def _clean(o):
     if isinstance(o, dict):
         return {k: _clean(v) for k, v in o.items()}
@@ -1893,72 +1501,46 @@ def _clean(o):
     return o
 
 
-def main(
-    argv: list[str] | None = None, *, default_output_root: Path | None = None
-):
-    ap = argparse.ArgumentParser(description=__doc__)
+def _parse(argv, default_output_root, description):
+    ap = argparse.ArgumentParser(description=description)
     ap.add_argument("--apply", action="store_true",
                     help="write frozen outputs to generated/ instead of preview")
     ap.add_argument(
         "--out-root",
         type=Path,
         default=default_output_root or Path.cwd(),
-        help="paper project root (default: current directory)",
+        help="output root (default: current directory); outputs go to "
+             "<out-root>/generated_preview/ unless --apply is given",
     )
     ap.add_argument("--omega-max", type=float, default=None,
                     help="compatibility option; only 1.5 rad/s is accepted")
-    ap.add_argument("--ld", type=float, default=None,
-                    help="deprecated compatibility option; frozen suites set L_d")
-    ap.add_argument(
-        "--carrot-rule",
-        choices=("arc",),
-        default=None,
-        help="compatibility option; continuous arc-length lookahead is fixed",
-    )
     ap.add_argument("--tag", type=str, default=None,
                     help="write into a tagged subdirectory of "
                          "generated_preview/ (preview only)")
-    ap.add_argument("--hw-reference", action="store_true",
-                    help="generate ONLY the chapter-6 experiment-1 sim "
-                         "reference (metrics JSON + trace CSVs) and exit")
     args = ap.parse_args(argv)
-
     if args.omega_max is not None and not math.isclose(
         args.omega_max, 1.5, abs_tol=1e-12
     ):
         ap.error("--omega-max is fixed at 1.5 rad/s for paper simulations")
-    if args.ld is not None:
-        ap.error("--ld cannot override the frozen per-suite lookahead distances")
-
-    configure(omega_max=args.omega_max, ld=args.ld,
-              carrot_rule=args.carrot_rule)
     if args.tag and args.apply:
         ap.error("--tag is preview-only; do not combine with --apply")
+    configure(omega_max=args.omega_max)
 
     sub = "generated" if args.apply else "generated_preview"
     table_dir = args.out_root / sub / "tables"
     fig_dir = args.out_root / sub / "figures"
+    trace_root = args.out_root / sub / "hw_reference_traces"
     if args.tag:
-        table_dir = table_dir / args.tag
-        fig_dir = fig_dir / args.tag
+        table_dir, fig_dir, trace_root = (
+            table_dir / args.tag, fig_dir / args.tag, trace_root / args.tag
+        )
     table_dir.mkdir(parents=True, exist_ok=True)
     fig_dir.mkdir(parents=True, exist_ok=True)
-
-    if args.hw_reference:
-        print(f"Out root: {args.out_root / sub}  (apply={args.apply})")
-        trace_root = args.out_root / sub / "hw_reference_traces"
-        if args.tag:
-            trace_root = trace_root / args.tag
-        run_hw_reference(table_dir, trace_root)
-        return
-
     print(f"Out root: {args.out_root / sub}  (apply={args.apply})")
-    print(f"Config: omega_max = {OMEGA_MAX} rad/s, "
-          f"control_rate = {1.0 / DT:.1f} Hz, "
-          f"test-1 grid lookaheads = {GRID_LDS} m, "
-          f"carrot_rule = {CARROT_RULE}")
+    return args, table_dir, fig_dir, trace_root
 
-    test1 = run_test1(table_dir, fig_dir)
+
+def _print_test1(test1):
     print("\n*** TEST 1 frozen grid ***")
     for ld in GRID_LDS:
         block = test1["blocks"][_ld_tag(ld)]
@@ -1967,18 +1549,53 @@ def main(
               f"negative_control_dev="
               f"{block['pp_negative_control_max_dev']:.2e}")
 
-    print("\n*** TEST 2 frozen operating point ***")
+
+def _print_test4_point():
+    print("\n*** TEST 4 frozen operating point ***")
     dpp_l1, dpp_l2, dpp_a1, dpp_a2, _ = dpp_parameters(
-        TEST2_OMEGA_N, TEST2_ZETA, ld=TEST2_LD
+        TEST4_OMEGA_N, TEST4_ZETA, ld=TEST4_LD
     )
-    print(f"Ld={TEST2_LD:.2f}, omega_n={TEST2_OMEGA_N:.6f}, "
-          f"zeta={TEST2_ZETA:.1f}; DPP L1={dpp_l1:.3f} m, L2={dpp_l2:.3f} m, "
+    print(f"Ld={TEST4_LD:.2f}, omega_n={TEST4_OMEGA_N:.6f}, "
+          f"zeta={TEST4_ZETA:.1f}; DPP L1={dpp_l1:.3f} m, L2={dpp_l2:.3f} m, "
           f"a1={dpp_a1:.3f}, a2={dpp_a2:.3f} 1/m^2 "
           f"(a1L1^2+a2L2^2={dpp_a1 * dpp_l1**2 + dpp_a2 * dpp_l2**2:.6f})")
-    run_test2(table_dir, fig_dir, TEST2_OMEGA_N, TEST2_ZETA, ld=TEST2_LD)
-    trace_root = args.out_root / sub / "hw_reference_traces"
-    if args.tag:
-        trace_root = trace_root / args.tag
+
+
+def main_test1(argv=None, *, default_output_root=None):
+    """``ecpp-paper test1``: the (omega_n, zeta, L_d) parameter sweep."""
+    _, table_dir, fig_dir, _ = _parse(argv, default_output_root, main_test1.__doc__)
+    print(f"Config: omega_max = {OMEGA_MAX} rad/s, control_rate = {1.0 / DT:.1f} Hz, "
+          f"test-1 grid lookaheads = {GRID_LDS} m")
+    _print_test1(run_test1(table_dir, fig_dir))
+    print("\nDone.")
+
+
+def main_test4(argv=None, *, default_output_root=None):
+    """``ecpp-paper test4``: PP, DPP, ungated ECPP, and ECPP at representative
+    initial conditions on the straight path and the R = 3 m arc."""
+    _, table_dir, fig_dir, _ = _parse(argv, default_output_root, main_test4.__doc__)
+    _print_test4_point()
+    run_test4(table_dir, fig_dir, TEST4_OMEGA_N, TEST4_ZETA, ld=TEST4_LD)
+    print("\nDone.")
+
+
+def main_hw_reference(argv=None, *, default_output_root=None):
+    """``ecpp-paper hw-reference``: ideal simulated references (metrics JSON and
+    trace CSVs) for the arms of real-robot Experiment 1."""
+    _, table_dir, _, trace_root = _parse(argv, default_output_root, main_hw_reference.__doc__)
+    run_hw_reference(table_dir, trace_root)
+    print("\nDone.")
+
+
+def main(argv=None, *, default_output_root=None):
+    """Run Test 1, Test 4, and the hardware reference in one go (the
+    historical ``ieee-access`` command)."""
+    _, table_dir, fig_dir, trace_root = _parse(argv, default_output_root, main.__doc__)
+    print(f"Config: omega_max = {OMEGA_MAX} rad/s, control_rate = {1.0 / DT:.1f} Hz, "
+          f"test-1 grid lookaheads = {GRID_LDS} m")
+    _print_test1(run_test1(table_dir, fig_dir))
+    _print_test4_point()
+    run_test4(table_dir, fig_dir, TEST4_OMEGA_N, TEST4_ZETA, ld=TEST4_LD)
     run_hw_reference(table_dir, trace_root)
     print("\nDone.")
 

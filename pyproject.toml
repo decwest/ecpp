@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ecpp"
-version = "0.1.0"
-description = "Fixed-speed Error-Compensated Pure Pursuit simulator"
+version = "1.0.0"
+description = "Error-Compensated Pure Pursuit (ECPP): fixed-speed path-tracking simulator and reproduction of the IEEE Access paper tests"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
@@ -16,6 +16,13 @@ dependencies = [
     "pillow>=10.0",
     "PyYAML>=6.0",
 ]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.urls]
+Homepage = "https://github.com/decwest/ecpp"
+"Nav2 plugin" = "https://github.com/decwest/nav2_error_compensated_pure_pursuit_controller"
 
 [project.scripts]
 ecpp-paper = "ecpp.paper.__main__:main"
@@ -28,7 +35,12 @@ dev = [
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+"ecpp.paper" = ["*.cpp"]
+
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+# Keep a sourced ROS 2 environment from auto-loading its pytest plugins
+# (harmless when they are not installed).
 addopts = ["-p", "no:launch_testing", "-p", "no:launch_ros"]

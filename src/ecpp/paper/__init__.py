@@ -1,6 +1,5 @@
-"""IEEE Access paper-specific, reproducible artifact generators.
+"""Reproducible generators of the ECPP paper's simulation tests and Fig. 1.
 
-Run ``python -m ecpp.paper --help`` (or the ``ecpp-paper`` entry point) for
-the canonical generation commands.  Paper-local scripts are compatibility
-wrappers only.
+Run ``ecpp-paper --help`` (or ``python -m ecpp.paper --help``) for the
+commands; each test is one sub-command named after the paper's numbering.
 """

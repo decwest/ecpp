@@ -1,4 +1,4 @@
-"""Test-3 generator: preview range versus local response on a straight-arc-straight path.
+"""Test-2 generator (paper numbering): preview range versus local response on a straight-arc-straight path.
 
 Pure Pursuit couples two roles of the lookahead distance L_d: how far ahead a
 curvature change is detected (the carrot reaches the change L_d before the
@@ -68,7 +68,7 @@ OMEGA_MAX = ia.OMEGA_MAX
 DT = ia.DT
 TMAX = ia.TMAX
 
-OMEGA_N = ia.SPEED_OMEGA_N_MAX     # 1.029884 rad/s (at v0), the Test-2 / hardware design point
+OMEGA_N = ia.SPEED_OMEGA_N_MAX     # 1.029884 rad/s (at v0), the Test-4 / hardware design point
 ZETA = 1.0
 COND = (0.0, 0.0)                  # start on the path
 LOOKAHEADS = (0.5, 1.0)
@@ -91,9 +91,9 @@ SETTLING_FRACTION = 0.02           # T_s band, of the exit peak (chapter-5 conve
 ZC_DEADBAND = 0.001                # m, dead band of the path-crossing count
 LEAD_SEARCH_START = S_ENTRY - 1.5  # m
 LEAD_THRESHOLD_FRACTION = 0.1      # of the arc curvature (JSON only)
-FIGURE_STEM = "sim_test3_preview_decoupling"
-TABLE_STEM = "sim_test3_results"
-METRICS_STEM = "sim_test3_metrics"
+FIGURE_STEM = "sim_test2_preview_decoupling"
+TABLE_STEM = "sim_test2_results"
+METRICS_STEM = "sim_test2_metrics"
 KAPPA_PANEL_WINDOW = (S_ENTRY - 1.5, S_EXIT + 1.0)
 XY_PANEL_LIMITS = ((0.8, 3.6), (-0.4, 3.4))
 XY_INSET_LIMITS = ((2.35, 3.35), (0.2, 1.7))
@@ -292,15 +292,22 @@ def feedforward_profiles(path, window=KAPPA_PANEL_WINDOW, spacing=0.01):
 # ---------------------------------------------------------------------------
 # Outputs
 # ---------------------------------------------------------------------------
-def write_table(path_out, metrics):
-    lines = [
-        r"\begin{tabular}{@{}lrrrrrrrr@{}}",
-        r"\toprule",
-        r"Method & $L_d$ [m] & $e_{y,\mathrm{in}}$ [m] & $e_{y,\mathrm{out}}$ [m] & "
-        r"$T_s^{2\%}$ [s] & $\bar e_y$ [m] & $\bar e_\theta$ [$^\circ$] & "
-        r"$N_{\mathrm{zc}}$ & $\kappa_{\max}$ [1/m] \\",
-        r"\midrule",
-    ]
+def write_table(path_out, metrics, two_line_header=False):
+    """Write the arm table; ``two_line_header`` splits symbols and units into
+    two header lines (the narrower layout typeset in the manuscript)."""
+    if two_line_header:
+        header = [
+            r"Method & $L_d$ & $e_{y,\mathrm{in}}$ & $e_{y,\mathrm{out}}$ & $T_s^{2\%}$ "
+            r"& $\bar e_y$ & $\bar e_\theta$ & $N_{\mathrm{zc}}$ & $\kappa_{\max}$ \\",
+            r" & [m] & [m] & [m] & [s] & [m] & [$^\circ$] & & [1/m] \\",
+        ]
+    else:
+        header = [
+            r"Method & $L_d$ [m] & $e_{y,\mathrm{in}}$ [m] & $e_{y,\mathrm{out}}$ [m] & "
+            r"$T_s^{2\%}$ [s] & $\bar e_y$ [m] & $\bar e_\theta$ [$^\circ$] & "
+            r"$N_{\mathrm{zc}}$ & $\kappa_{\max}$ [1/m] \\",
+        ]
+    lines = [r"\begin{tabular}{@{}lrrrrrrrr@{}}", r"\toprule", *header, r"\midrule"]
     for m in metrics:
         lines.append(" & ".join([
             m["method"],
@@ -432,7 +439,7 @@ def make_figure(fig_dir, path, traces):
     lfig.legend(handles, labels, loc="center", ncol=len(labels), fontsize=6.5,
                 frameon=False, handlelength=2.2, columnspacing=1.2)
     for ext in ("pdf", "png"):
-        out = fig_dir / f"sim_test3_legend.{ext}"
+        out = fig_dir / f"sim_test2_legend.{ext}"
         lfig.savefig(out, dpi=300, bbox_inches="tight", pad_inches=0.02)
         written.append(out)
     plt.close(lfig)
@@ -453,7 +460,7 @@ def make_figure(fig_dir, path, traces):
         pax.yaxis.label.set_size(7)
         pfig.tight_layout(pad=0.25)
         for ext in ("pdf", "png"):
-            out = fig_dir / f"sim_test3_{name}.{ext}"
+            out = fig_dir / f"sim_test2_{name}.{ext}"
             pfig.savefig(out, dpi=300, bbox_inches="tight", pad_inches=0.02)
             written.append(out)
         plt.close(pfig)
@@ -468,7 +475,7 @@ def write_traces(trace_dir, traces):
             trace.curvature, trace.omega_cmd, trace.omega_raw, trace.sigma,
         ])
         np.savetxt(
-            trace_dir / f"sim_test3_{key}.csv",
+            trace_dir / f"sim_test2_{key}.csv",
             rows,
             delimiter=",",
             header="t,x,y,psi,path_s,e_y,e_psi,kappa,omega_cmd,omega_raw,sigma",
@@ -477,9 +484,10 @@ def write_traces(trace_dir, traces):
         )
 
 
-def run_test3(table_dir, fig_dir, trace_dir):
+def run_test2(table_dir, fig_dir, trace_dir):
     path, traces, metrics = simulate_arms()
     write_table(table_dir / f"{TABLE_STEM}.tex", metrics)
+    write_table(table_dir / f"{TABLE_STEM}_display.tex", metrics, two_line_header=True)
     figures = make_figure(fig_dir, path, traces)
     write_traces(trace_dir, traces)
     s_ff, ff = feedforward_profiles(path, spacing=0.02)
@@ -496,7 +504,7 @@ def run_test3(table_dir, fig_dir, trace_dir):
             "omega_n": OMEGA_N,
             "omega_n_configured": ia.configured_omega_n(OMEGA_N),
             "omega_n_basis": "natural frequency at v0; plugin configured value = omega_n*(v0+v_epsilon)/v0",
-            "omega_n_name": "omega_n_max_ld_1p0 (Test-2 / hardware design point)",
+            "omega_n_name": "omega_n_max_ld_1p0 (Test-4 / hardware design point)",
             "zeta": ZETA,
             "initial_condition": list(COND),
             "lookaheads_m": list(LOOKAHEADS),
@@ -583,8 +591,8 @@ def main(
           f"lookaheads = {LOOKAHEADS} m, R = {ARC_R} m, "
           f"entry s = {S_ENTRY:.3f} m, exit s = {S_EXIT:.3f} m, "
           f"initial condition = {COND}")
-    out, figures = run_test3(table_dir, fig_dir, trace_dir)
-    print("\n*** TEST 3 preview decoupling ***")
+    out, figures = run_test2(table_dir, fig_dir, trace_dir)
+    print("\n*** TEST 2 preview decoupling ***")
     print(f"{'arm':14s} {'d_lead':>6s} {'e_y,in':>7s} {'e_y,out':>7s} "
           f"{'Ts2%out':>7s} {'bar_ey':>7s} {'bar_eth':>7s} {'Nzc':>3s} "
           f"{'kmax':>5s} {'sat':>4s}")

@@ -117,7 +117,6 @@ class ExperimentConfig:
     representative_zeta: float = 1.0
     max_steps: int = 1100
     output_dir: Path = Path("results/access_ecpp_fixed_speed")
-    export_tex_project_dir: Path | None = Path("../tex_docker_environment/projects/ECPP_ACCESS/manuscript")
     paths: tuple[PathSpec, ...] = (
         PathSpec("straight", "Straight", "straight", {"length": 6.0, "num_points": 700}),
         PathSpec("arc", "Arc", "arc", {"radius": 1.5, "angle_deg": 90.0, "num_points": 600}),
@@ -204,8 +203,6 @@ def experiment_config_from_mapping(data: Mapping[str, Any], base_dir: Path | Non
         representative_omega_n = omega_n_values[0]
 
     output_dir = Path(str(experiment.get("output_dir", "results/access_ecpp_fixed_speed")))
-    export_raw = experiment.get("export_tex_project_dir", "../tex_docker_environment/projects/ECPP_ACCESS/manuscript")
-    export_dir = None if export_raw in {None, ""} else _resolve_path(base_dir, Path(str(export_raw)))
 
     return ExperimentConfig(
         control=control,
@@ -224,7 +221,6 @@ def experiment_config_from_mapping(data: Mapping[str, Any], base_dir: Path | Non
         representative_zeta=_float(representative, "zeta", 1.0),
         max_steps=int(experiment.get("max_steps", 1100)),
         output_dir=_resolve_path(base_dir, output_dir),
-        export_tex_project_dir=export_dir,
         paths=_path_specs(data.get("paths")),
         lookahead_sweep_values_m=tuple(float(v) for v in lookahead_sweep.get("values_m", (0.05, 0.10, 0.20, 0.30, 0.50, 0.80, 1.00, 1.20))),
     )

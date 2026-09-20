@@ -8,43 +8,11 @@ import sys
 import pytest
 import numpy as np
 
-from ecpp.paper import figure1, ieee_access, test3_preview
+from ecpp.paper import figure1, ieee_access, test2_preview
 from ecpp.paper.tracking import simulate_fixed_speed
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-PAPER_ROOT = (
-    REPO_ROOT.parent
-    / "tex_docker_environment"
-    / "projects"
-    / "ECPP_ACCESS"
-)
-
-
-@pytest.mark.parametrize(
-    "relative_script",
-    (
-        "generate_sim_evaluation_outputs.py",
-        "generate_figure1_pp_ecpp_matrix.py",
-        "generate_sim_test3_outputs.py",
-    ),
-)
-def test_paper_local_generators_are_thin_runnable_wrappers(relative_script):
-    script = PAPER_ROOT / "scripts" / relative_script
-    source_lines = script.read_text(encoding="utf-8").splitlines()
-    assert len(source_lines) <= 20
-    env = os.environ.copy()
-    env["PYTHONPATH"] = str(REPO_ROOT / "src")
-    completed = subprocess.run(
-        [sys.executable, str(script), "--help"],
-        cwd=PAPER_ROOT,
-        env=env,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    assert completed.returncode == 0, completed.stderr
-    assert "generated_preview" in completed.stdout
 
 
 def test_canonical_cli_is_importable():
@@ -59,12 +27,11 @@ def test_canonical_cli_is_importable():
         check=False,
     )
     assert completed.returncode == 0, completed.stderr
-    assert "figure1" in completed.stdout
-    assert "ieee-access" in completed.stdout
-    assert "test3-preview" in completed.stdout
+    for command in ("figure1", "test1", "test2", "test3", "test4", "all", "hw-reference"):
+        assert command in completed.stdout
 
 
-def test_canonical_ieee_cli_accepts_explicit_apply(tmp_path):
+def test_hw_reference_cli_accepts_explicit_apply(tmp_path):
     env = os.environ.copy()
     env["PYTHONPATH"] = str(REPO_ROOT / "src")
     completed = subprocess.run(
@@ -72,11 +39,10 @@ def test_canonical_ieee_cli_accepts_explicit_apply(tmp_path):
             sys.executable,
             "-m",
             "ecpp.paper",
-            "ieee-access",
+            "hw-reference",
             "--out-root",
             str(tmp_path),
             "--apply",
-            "--hw-reference",
         ],
         cwd=REPO_ROOT,
         env=env,
@@ -146,7 +112,8 @@ def test_nominal_overlay_is_unfitted_and_uses_the_same_evaluation_times(omega_n,
         np.testing.assert_array_equal(nominal.get_xdata(), time)
         assert nominal.get_ydata()[0] == pytest.approx(0.15)
         assert actual.get_linestyle() == "-" and nominal.get_linestyle() == "--"
-        assert actual.get_color() == nominal.get_color()
+        # The nominal model is drawn in the same dark dashed style in every cell.
+        assert actual.get_color() == "blue" and nominal.get_color() == "0.15"
         # Independent numerical integration of the nominal ODE (RK4).
         state = np.array([0.15, 0.0])
         expected = [state[0]]
@@ -215,12 +182,11 @@ def test_paper_cli_rejects_nonstandard_state_update_clip(tmp_path):
             sys.executable,
             "-m",
             "ecpp.paper",
-            "ieee-access",
+            "hw-reference",
             "--out-root",
             str(tmp_path),
             "--omega-max",
             "2.0",
-            "--hw-reference",
         ],
         cwd=REPO_ROOT,
         env=env,
@@ -296,21 +262,21 @@ def test_frozen_paper_experiment_conditions_are_exact():
     # Test 2 (redesigned 2026-09-08): the hardware design point, the paper's
     # DPP construction, a right-turning arc, and the far conditions that
     # expose the reachability limit of the ungated linear laws.
-    assert ieee_access.TEST2_LD == pytest.approx(1.0)
-    assert ieee_access.TEST2_OMEGA_N == pytest.approx(ieee_access.SPEED_OMEGA_N_MAX)
-    assert ieee_access.TEST2_ZETA == pytest.approx(1.0)
+    assert ieee_access.TEST4_LD == pytest.approx(1.0)
+    assert ieee_access.TEST4_OMEGA_N == pytest.approx(ieee_access.SPEED_OMEGA_N_MAX)
+    assert ieee_access.TEST4_ZETA == pytest.approx(1.0)
     assert ieee_access.DPP_FAR_FACTOR == pytest.approx(2.0)
     assert ieee_access.ARC_TURN == pytest.approx(-1.0)
     assert ieee_access.ARC_GOAL == pytest.approx(3.0 * 3.0 * np.pi / 4.0)
     assert [(ey, round(np.rad2deg(epsi)))
-            for ey, epsi in ieee_access.TEST2_CONDS] == [
+            for ey, epsi in ieee_access.TEST4_CONDS] == [
         (0.0, -90),
         (0.3, 0), (0.3, -90),
         (2.0, 0), (2.0, -90),
         (3.0, 0), (3.0, -90),
     ]
     l1, l2, a1, a2, v_gain = ieee_access.dpp_parameters(
-        ieee_access.TEST2_OMEGA_N, ieee_access.TEST2_ZETA, ld=ieee_access.TEST2_LD
+        ieee_access.TEST4_OMEGA_N, ieee_access.TEST4_ZETA, ld=ieee_access.TEST4_LD
     )
     assert v_gain == pytest.approx(0.5)
     assert l1 == pytest.approx(2.0)
@@ -367,27 +333,27 @@ def test_configured_pp_equivalent_ecpp_matches_pp(ld, ey0, epsi0):
     np.testing.assert_allclose(ecpp.curvature, pp.curvature, atol=2e-12, rtol=0.0)
 
 
-def test_frozen_test3_conditions_are_exact():
-    assert test3_preview.V0 == pytest.approx(0.5)
-    assert test3_preview.DT == pytest.approx(1.0 / 30.0)
-    assert test3_preview.OMEGA_MAX == pytest.approx(1.5)
-    assert test3_preview.OMEGA_N == pytest.approx(ieee_access.SPEED_OMEGA_N_MAX)
-    assert test3_preview.OMEGA_N == pytest.approx(ieee_access.TEST2_OMEGA_N)
-    assert test3_preview.ZETA == pytest.approx(1.0)
-    assert test3_preview.COND == pytest.approx((0.0, 0.0))
-    assert test3_preview.LOOKAHEADS == pytest.approx((0.5, 1.0))
-    assert test3_preview.METHODS == ("PP", "ECPP")
-    assert test3_preview.ARMS == (("PP", 0.5), ("PP", 1.0), ("ECPP", 0.5), ("ECPP", 1.0))
-    assert test3_preview.LEAD_IN == pytest.approx(2.0)
-    assert test3_preview.ARC_R == pytest.approx(1.0)
-    assert test3_preview.ARC_ANGLE == pytest.approx(np.pi / 2.0)
-    assert test3_preview.EXIT_CONTROL == pytest.approx(8.0)
-    assert test3_preview.EXIT_EVAL == pytest.approx(6.0)
-    assert test3_preview.SETTLING_FRACTION == pytest.approx(0.02)
-    assert test3_preview.ENTRY_MARGIN == pytest.approx(0.5)
-    assert test3_preview.EXIT_MARGIN == pytest.approx(0.5)
-    assert test3_preview.LEAD_SEARCH_START == pytest.approx(0.5)
-    path = test3_preview.StraightArcStraightPath()
+def test_frozen_test2_conditions_are_exact():
+    assert test2_preview.V0 == pytest.approx(0.5)
+    assert test2_preview.DT == pytest.approx(1.0 / 30.0)
+    assert test2_preview.OMEGA_MAX == pytest.approx(1.5)
+    assert test2_preview.OMEGA_N == pytest.approx(ieee_access.SPEED_OMEGA_N_MAX)
+    assert test2_preview.OMEGA_N == pytest.approx(ieee_access.TEST4_OMEGA_N)
+    assert test2_preview.ZETA == pytest.approx(1.0)
+    assert test2_preview.COND == pytest.approx((0.0, 0.0))
+    assert test2_preview.LOOKAHEADS == pytest.approx((0.5, 1.0))
+    assert test2_preview.METHODS == ("PP", "ECPP")
+    assert test2_preview.ARMS == (("PP", 0.5), ("PP", 1.0), ("ECPP", 0.5), ("ECPP", 1.0))
+    assert test2_preview.LEAD_IN == pytest.approx(2.0)
+    assert test2_preview.ARC_R == pytest.approx(1.0)
+    assert test2_preview.ARC_ANGLE == pytest.approx(np.pi / 2.0)
+    assert test2_preview.EXIT_CONTROL == pytest.approx(8.0)
+    assert test2_preview.EXIT_EVAL == pytest.approx(6.0)
+    assert test2_preview.SETTLING_FRACTION == pytest.approx(0.02)
+    assert test2_preview.ENTRY_MARGIN == pytest.approx(0.5)
+    assert test2_preview.EXIT_MARGIN == pytest.approx(0.5)
+    assert test2_preview.LEAD_SEARCH_START == pytest.approx(0.5)
+    path = test2_preview.StraightArcStraightPath()
     assert path.s_entry == pytest.approx(2.0)
     assert path.s_exit == pytest.approx(2.0 + 0.5 * np.pi)
     assert path.goal == pytest.approx(path.s_exit + 6.0)
@@ -402,8 +368,8 @@ def test_frozen_test3_conditions_are_exact():
     assert path.feedforward_curvature(1.5, 1.0) > 0.0
 
 
-def test_test3_preview_follows_ld_and_recovery_follows_the_gains():
-    _, _, metrics = test3_preview.simulate_arms()
+def test_test2_preview_follows_ld_and_recovery_follows_the_gains():
+    _, _, metrics = test2_preview.simulate_arms()
     assert [m["key"] for m in metrics] == [
         "PP_ld0p50", "PP_ld1p00", "ECPP_ld0p50", "ECPP_ld1p00",
     ]
@@ -428,33 +394,56 @@ def test_test3_preview_follows_ld_and_recovery_follows_the_gains():
     assert abs(ecpp_ratio - 1.0) < 0.15
 
 
-def test_test3_cli_preview_and_apply(tmp_path):
-    test3_preview.main(["--out-root", str(tmp_path)])
+def test_test2_cli_preview_and_apply(tmp_path):
+    test2_preview.main(["--out-root", str(tmp_path)])
     preview = tmp_path / "generated_preview"
-    assert (preview / "tables" / "sim_test3_results.tex").is_file()
-    assert (preview / "tables" / "sim_test3_metrics.json").is_file()
-    assert (preview / "figures" / "sim_test3_preview_decoupling.pdf").is_file()
+    assert (preview / "tables" / "sim_test2_results.tex").is_file()
+    assert (preview / "tables" / "sim_test2_results_display.tex").is_file()
+    assert (preview / "tables" / "sim_test2_metrics.json").is_file()
+    assert (preview / "figures" / "sim_test2_preview_decoupling.pdf").is_file()
     assert not (tmp_path / "generated").exists()
-    test3_preview.main(["--out-root", str(tmp_path), "--apply"])
+    test2_preview.main(["--out-root", str(tmp_path), "--apply"])
     applied = tmp_path / "generated"
-    assert (applied / "tables" / "sim_test3_results.tex").is_file()
-    assert (applied / "figures" / "sim_test3_preview_decoupling.pdf").is_file()
-    assert (applied / "traces" / "sim_test3_PP_ld0p50.csv").is_file()
-    table = (applied / "tables" / "sim_test3_results.tex").read_text()
+    assert (applied / "tables" / "sim_test2_results.tex").is_file()
+    assert (applied / "figures" / "sim_test2_preview_decoupling.pdf").is_file()
+    assert (applied / "traces" / "sim_test2_PP_ld0p50.csv").is_file()
+    table = (applied / "tables" / "sim_test2_results.tex").read_text()
     assert "\\bottomrule" in table and table.count("\nPP &") == 2 and table.count("\nECPP &") == 2
     assert "$T_s^{2\\%}$" in table and "$N_{\\mathrm{zc}}$" in table
+    display = (applied / "tables" / "sim_test2_results_display.tex").read_text()
+    assert " & [m] & [m] & [m] & [s] & [m] & [$^\\circ$] & & [1/m] \\\\" in display
+    assert [l for l in table.splitlines() if l.startswith("PP &")] == [
+        l for l in display.splitlines() if l.startswith("PP &")]
     with pytest.raises(SystemExit):
-        test3_preview.main(["--out-root", str(tmp_path), "--apply", "--tag", "x"])
+        test2_preview.main(["--out-root", str(tmp_path), "--apply", "--tag", "x"])
+
+
+def test_test4_display_tables_are_the_manuscript_subset(tmp_path):
+    results = {}
+    for (ey0, eth0) in ieee_access.TEST4_CONDS:
+        for method in ieee_access.TEST4_METHODS:
+            results[(method, ey0, round(np.degrees(eth0)))] = {
+                "bar_e_y": 0.1, "bar_e_theta_deg": 1.0, "T_r": 1.0, "T_s": 2.0,
+                "M_os": 0.0, "kappa_max": 1.0, "sat_ratio": 0.0}
+    full = tmp_path / "full.tex"
+    shown = tmp_path / "display.tex"
+    ieee_access.write_test4_table(full, results)
+    ieee_access.write_test4_table(shown, results, conds=ieee_access.TEST4_DISPLAY_CONDS,
+                                  two_line_header=True)
+    assert full.read_text().count("\\multicolumn") == 7
+    assert shown.read_text().count("\\multicolumn") == 5
+    assert "e_y(0)=2.00" not in shown.read_text()
+    assert " & [m] & [$^\\circ$] & [s] & [s] & [m] & [1/m] & [\\%] \\\\" in shown.read_text()
 
 
 def test_ungated_linear_laws_stay_saturated_far_from_the_path():
     """Reproduce observed circling and ECPP settling in this finite simulation."""
-    ieee_access.configure(ld=ieee_access.TEST2_LD)
+    ieee_access.configure(ld=ieee_access.TEST4_LD)
     path = ieee_access.StraightPath()
     results = {}
     for method in ("DPP", "ECPP w/o gate", "ECPP"):
         m, _, _ = ieee_access.run_metrics(
-            path, method, ieee_access.TEST2_OMEGA_N, ieee_access.TEST2_ZETA, 3.0, 0.0
+            path, method, ieee_access.TEST4_OMEGA_N, ieee_access.TEST4_ZETA, 3.0, 0.0
         )
         results[method] = m
     assert results["DPP"]["evaluation_completed"] is False
