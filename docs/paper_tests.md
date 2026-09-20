@@ -1,6 +1,6 @@
 # Paper tests
 
-Frozen conditions of the simulation tests of the ECPP paper (Section VI),
+Frozen conditions of the simulation tests of the ECPP paper,
 numbered as in the paper.  Each test is one `ecpp-paper` sub-command:
 
 ```bash

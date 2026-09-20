@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ecpp"
 version = "1.0.0"
-description = "Error-Compensated Pure Pursuit (ECPP): fixed-speed path-tracking simulator and reproduction of the IEEE Access paper tests"
+description = "Error-Compensated Pure Pursuit (ECPP): simulation code of the paper and reproduction of its tests"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
