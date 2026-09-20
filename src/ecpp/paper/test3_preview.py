@@ -296,9 +296,9 @@ def write_table(path_out, metrics):
     lines = [
         r"\begin{tabular}{@{}lrrrrrrrr@{}}",
         r"\toprule",
-        r"Method & $L_d$ [m] & $e_{y,\rm in}$ [m] & $e_{y,\rm out}$ [m] & "
+        r"Method & $L_d$ [m] & $e_{y,\mathrm{in}}$ [m] & $e_{y,\mathrm{out}}$ [m] & "
         r"$T_s^{2\%}$ [s] & $\bar e_y$ [m] & $\bar e_\theta$ [$^\circ$] & "
-        r"$N_{zc}$ & $\kappa_{\max}$ [1/m] \\",
+        r"$N_{\mathrm{zc}}$ & $\kappa_{\max}$ [1/m] \\",
         r"\midrule",
     ]
     for m in metrics:
@@ -372,7 +372,7 @@ def _draw_curvature(ax, path, traces):
     ax.plot(s_ff, ref_k, "k--", lw=1.0, label=r"Reference $\kappa_r$")
     for ld, lw in zip(LOOKAHEADS, (0.8, 1.1)):
         ax.plot(s_ff, ff[ld], color="0.45", lw=lw, ls=":",
-                label=rf"$\kappa_{{\rm prev}}$, $L_d={ld:.1f}$ m")
+                label=rf"$\kappa_{{\mathrm{{prev}}}}$, $L_d={ld:.1f}$ m")
     for method, ld in ARMS:
         trace = traces[arm_key(method, ld)]
         win = ((trace.path_s >= KAPPA_PANEL_WINDOW[0])

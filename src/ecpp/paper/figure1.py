@@ -201,7 +201,7 @@ def _write_metadata(
     lines = [
         r"\begin{tabular}{@{}llrrrr@{}}",
         r"\toprule",
-        r"Case & Method & $L_d$ & $\omega_n$ & $\zeta$ & $M_{\rm os}$ \\",
+        r"Case & Method & $L_d$ & $\omega_n$ & $\zeta$ & $M_\mathrm{os}$ \\",
         r"\midrule",
     ]
     for scenario in SCENARIOS:
@@ -264,7 +264,7 @@ def make_figure() -> tuple[Path, Path]:
             text = (
                 rf"$T_s^{{2\%}}={_format_metric(metrics['settling_time_2pct_s'])}$ s"
                 "\n"
-                rf"$M_{{\rm os}}={_format_metric(metrics['overshoot_m'], 3)}$ m"
+                rf"$M_{{\mathrm{{os}}}}={_format_metric(metrics['overshoot_m'], 3)}$ m"
             )
             ax.text(
                 0.97,

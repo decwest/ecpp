@@ -12,14 +12,13 @@ Engine (frozen experiment values)
   1.414214} rad/s x zeta in {1/sqrt2, 1, sqrt2} x L_d in
   {1.0, 0.5} m at the single fixed initial condition (0.15 m, 0 deg).
   Every omega_n on the axis is a named quantity (PP-equivalent at L_d=1.0,
-  the rate-bound design limit at L_d=1.0, PP-equivalent at L_d=0.5).
+  the reference design value at L_d=1.0, PP-equivalent at L_d=0.5).
 * Test 2 uses the design point of the hardware experiments: L_d = 1.0 m,
-  omega_n = omega_n_max(1.0 m) = 1.029884 rad/s, zeta = 1 (critical damping
-  at the rate-bound design limit).  Its initial conditions are the one-sided
+  omega_n = omega_n_ref(1.0 m) = 1.029884 rad/s, zeta = 1 (nominal critical
+  damping). Its initial conditions are the one-sided
   grid {0, 0.30, 2.0, 3.0 m} x {0, -90 deg} minus the origin (7 conditions):
   0.30 m keeps the gate open (sigma = 0.99), 2.0 m starts with the gate
-  closed, and 3.0 m lies beyond the distance at which the ungated linear
-  laws saturate permanently.
+  nearly closed, and 3.0 m probes approach from a larger tracking error.
 * Controllers: PP, DPP, ECPP w/o gate (sigma == 1), ECPP (gated).
 * ECPP law  kappa_des = kappa_PP - sigma(e_y) * (dK_y e_y + dK_theta sin e_theta)
       dK_y     = K_y - 2/L_d^2 ,  K_y     = (omega_n / v0)^2
@@ -76,6 +75,7 @@ import numpy as np
 # Figure style shared by every paper figure: Times New Roman text and
 # STIX (Times-like) math, matching the manuscript body font.
 PAPER_RCPARAMS = {
+    "pdf.fonttype": 42,  # embed TrueType (Type 42), not Type 3, for IEEE PDF checks
     "font.family": "serif",
     "font.serif": ["Times New Roman", "Times", "Nimbus Roman", "Liberation Serif",
                    "DejaVu Serif"],
@@ -131,7 +131,7 @@ REPRO_ZETA = 1.0
 # Theory constants (documented functions)
 # ---------------------------------------------------------------------------
 def gate_envelope_error_bound(eps_off=None, ld=None):
-    """Gate-envelope steady error bound  ebar_g = sqrt(eps_off) * L_d."""
+    """Representative error scale at eps_off; not a zero-compensation boundary."""
     eps_off = EPS_OFF if eps_off is None else eps_off
     ld = LD if ld is None else ld
     return math.sqrt(eps_off) * ld
@@ -139,15 +139,15 @@ def gate_envelope_error_bound(eps_off=None, ld=None):
 
 def omega_n_max(zeta, ebar, sbar=0.0, kappa_ref=0.0,
                 v=None, omega_max=None):
-    """Rate-based design upper limit (manuscript eq. for omega_n,max)
+    """Nominal-model rate criterion (legacy function name retained).
 
         omega_n_max(zeta; ebar, sbar)
             = (v/ebar) * (-zeta sbar + sqrt(zeta^2 sbar^2 + ebar w_budget / v))
 
     with w_budget = omega_max - v |kappa_ref| (straight: kappa_ref = 0).
-    This bounds the paper's omega_n, i.e. the natural frequency defined with
-    the nominal speed v; the plugin's configured value is
-    configured_omega_n(omega_n_max)."""
+    With sbar=0 and the representative gate error scale this gives the
+    paper's omega_n,ref. It is a reference for tuning, not a non-saturation
+    guarantee for the nonlinear closed loop."""
     v = V0 if v is None else v
     omega_max = OMEGA_MAX if omega_max is None else omega_max
     w_budget = omega_max - v * abs(kappa_ref)
@@ -450,9 +450,7 @@ def overshoot(e, e0):
 def second_order_response(t, e0, wn, z):
     """Homogeneous response of the designed second-order model.
 
-    ``wn`` is the paper's natural frequency (defined at v0); the curve uses
-    the gains ``K_y`` and ``K_theta`` that the controller realizes, which
-    coincide with the design values.
+    ``wn`` and ``z`` are the nominal design values, not fitted to a trace.
     """
     return second_order_response_with_initial_rate(t, e0, 0.0, wn, z)
 
@@ -461,9 +459,8 @@ def second_order_response_with_initial_rate(t, e0, e_dot0, wn, z):
     """Linear response of the designed model with an initial rate.
 
     ``wn`` is the paper's natural frequency (defined at v0).  The poles are
-    computed from ``K_y`` and ``K_psi`` at the nominal speed, which is what
-    the controller realizes after its ``|v|+epsilon`` regularization is
-    compensated by ``configured_omega_n``.
+    computed from the target gains at nominal speed. Nonlinear geometry,
+    the actual sigmoid, sampling, and saturation are absent from this model.
     """
 
     t = np.asarray(t, dtype=float)
@@ -641,7 +638,7 @@ def legacy_write_test1_sweep_table(path_out, rows_by_ld, caption_cond):
         r"\begin{tabular}{@{}lllllllllll@{}}",
         r"\toprule",
         r"$\omega_n$ & $\zeta$ & $\omega_n/\omega_n^{\max}$ & $\bar e_y$ & "
-        r"$\bar e_\theta$ & $T_r$ & $T_s$ & $M_{\rm os}$ & $T_m$ & "
+        r"$\bar e_\theta$ & $T_r$ & $T_s$ & $M_\mathrm{os}$ & $T_m$ & "
         r"$\kappa_{\max}$ & sat.[\%] \\",
     ]
 
@@ -680,7 +677,7 @@ def legacy_write_test1_sweep_table(path_out, rows_by_ld, caption_cond):
         r"\bottomrule",
         r"\multicolumn{11}{@{}l@{}}{\footnotesize $^{\ddagger}$"
         r" PP reference (implicit local gains: "
-        r"$\omega_{n,\rm PP}=\sqrt{2}v_0/L_d$, $\zeta=0.707$).}\\",
+        r"$\omega_{n,\mathrm{PP}}=\sqrt{2}v_0/L_d$, $\zeta=0.707$).}\\",
         r"\multicolumn{11}{@{}l@{}}{\footnotesize $^{\dagger}$"
         r" out-of-bound reference ($\omega_n=" + oob_txt
         + r"\,\omega_n^{\max}$).}\\",
@@ -695,12 +692,12 @@ def legacy_write_test1_selection(path_out, sel):
         r"\begin{tabular}{@{}llllllll@{}}",
         r"\toprule",
         r"Criterion & $L_d$ & $\omega_n$ & $\zeta$ & "
-        r"$\omega_n/\omega_n^{\max}$ & $T_s$ & $M_{\rm os}$ & "
+        r"$\omega_n/\omega_n^{\max}$ & $T_s$ & $M_\mathrm{os}$ & "
         r"$\kappa_{\max}$ \\",
         r"\midrule",
     ]
     lines.append(" & ".join([
-        r"selected ($M_{\rm os}\!\le\!0.05E_0$, min $T_s$)",
+        r"selected ($M_\mathrm{os}\!\le\!0.05E_0$, min $T_s$)",
         f(sel["ld"], 2),
         f(sel["omega_n"], 3), f(sel["zeta"], 3), f(sel["ratio"], 2),
         f(sel.get("T_s"), 2), f(sel.get("M_os"), 3), f(sel["kappa_max"], 2),
@@ -772,7 +769,7 @@ def legacy_fig_test1_step_response(fig_dir, straight, tag=""):
             label=fr"${LEGACY_OOB_RATIO:.3g}\,\omega_n^{{\max}}\,^{{\dagger}}$")
     ax.axhline(OMEGA_MAX, color="0.5", lw=0.7, ls=":")
     ax.axhline(-OMEGA_MAX, color="0.5", lw=0.7, ls=":")
-    ax.set_ylabel(r"$\omega_{\rm cmd}$ [rad/s]")
+    ax.set_ylabel(r"$\omega_\mathrm{cmd}$ [rad/s]")
     ax.set_xlabel(r"$t$ [s]")
     ax.set_title(r"(c) commanded $\omega$ ($\zeta{=}1.0$)", fontsize=8)
     ax.legend(fontsize=5.5, loc="best", ncol=2, framealpha=0.85)
@@ -979,11 +976,11 @@ GRID_PP_OMEGA_N_LD05 = math.sqrt(2.0) * V0 / GRID_LD_SHORT
 # (paper basis, natural frequency at v0; the plugin is configured with
 # configured_omega_n(), i.e. 1.1x these values: 0.778, 1.133, 1.556 rad/s):
 #   0.707107 rad/s = PP-equivalent omega_n = sqrt(2) v0 / L_d at L_d = 1.0 m
-#   1.029884 rad/s = rate-bound design limit omega_n_max at L_d = 1.0 m
+#   1.029884 rad/s = reference design value omega_n,ref at L_d = 1.0 m
 #   1.414214 rad/s = PP-equivalent omega_n at L_d = 0.5 m
-# The fixed initial condition keeps the gate fully on for BOTH lookaheads
+# The fixed initial condition keeps the gate nearly fully on for BOTH lookaheads
 # ((0.15/0.5)^2 = 0.09 < eps_on = 0.10), so every cell starts in the linear
-# pole-placement regime; saturation phenomenology is exercised by the far
+# nominal-design region; saturation phenomenology is exercised by the far
 # test-2 conditions instead.  Test 1 is a parameter study only; it does not
 # select the test-2 operating point.
 # ---------------------------------------------------------------------------
@@ -1035,7 +1032,7 @@ def _hw_local_arms():
 
 
 def _hw_far_arms():
-    """Hardware experiment-1 far group: PP + zeta sweep at omega_n_max."""
+    """Hardware experiment-1 far group: PP + zeta sweep at the reference value."""
 
     arms = [{
         "key": "PP",
@@ -1145,7 +1142,7 @@ def _run_test1_grid_block(ld, trace_dir):
 
 
 def _write_test1_grid_table(path_out, blocks):
-    """One table with an L_d block per lookahead; unified metric columns."""
+    """Write the combined table and compact per-lookahead companion tables."""
 
     lines = [
         r"\begin{tabular}{@{}rlrrrrrrr@{}}",
@@ -1153,7 +1150,7 @@ def _write_test1_grid_table(path_out, blocks):
         (
             r"$\omega_n$ [rad/s] & $\zeta$ & $\lambda$ & $\bar e_y$ [m] & "
             r"$\bar e_\theta$ [$^\circ$] & $T_r$ [s] & $T_s^{2\%}$ [s] & "
-            r"$M_{\rm os}$ [m] & $\kappa_{\max}$ [1/m] \\"
+            r"$M_\mathrm{os}$ [m] & $\kappa_{\max}$ [1/m] \\"
         ),
         r"\midrule",
     ]
@@ -1165,11 +1162,12 @@ def _write_test1_grid_table(path_out, blocks):
         first_block = False
         lines.append(
             r"\multicolumn{9}{@{}l}{$L_d=" + f"{ld:.1f}"
-            + r"\,\mathrm{m}$:\ $\omega_{n,{\rm PP}}="
+            + r"\,\mathrm{m}$:\ $\omega_{n,\mathrm{PP}}="
             + f"{block['omega_n_pp']:.3f}"
-            + r"$, $\omega_{n,\max}=" + f"{block['omega_n_max']:.3f}"
+            + r"$, $\omega_{n,\mathrm{ref}}=" + f"{block['omega_n_max']:.3f}"
             + r"\,\mathrm{rad/s}$} \\"
         )
+        block_start = len(lines)
         pp = block.get("pp_row")
         if pp is not None:
             lines.append(" & ".join([
@@ -1204,8 +1202,45 @@ def _write_test1_grid_table(path_out, blocks):
                 f(row.get("M_os"), 4),
                 f(row.get("kappa_max"), 2),
             ]) + r"\\")
+        split_lines = [
+            r"\begin{tabular}{@{}rlrrrrrrr@{}}",
+            r"\toprule",
+            r"\shortstack{$\omega_n$\\{[rad/s]}} & $\zeta$ & $\lambda$ & "
+            r"\shortstack{$\bar e_y$\\{[m]}} & "
+            r"\shortstack{$\bar e_\theta$\\{[$^\circ$]}} & "
+            r"\shortstack{$T_r$\\{[s]}} & "
+            r"\shortstack{$T_s^{2\%}$\\{[s]}} & "
+            r"\shortstack{$M_\mathrm{os}$\\{[m]}} & "
+            r"\shortstack{$\kappa_{\max}$\\{[1/m]}} \\",
+            r"\midrule",
+            *lines[block_start:],
+            r"\bottomrule", r"\end{tabular}", "",
+        ]
+        split_path = path_out.with_name(f"{path_out.stem}_{_ld_tag(ld)}{path_out.suffix}")
+        split_path.write_text("\n".join(split_lines), encoding="utf-8")
     lines += [r"\bottomrule", r"\end{tabular}", ""]
     path_out.write_text("\n".join(lines), encoding="utf-8")
+
+
+def _plot_test1_response(ax, row, arr, color):
+    """Overlay the unfitted nominal response on the unchanged evaluation trace."""
+    time = arr[:, 0]
+    reference = second_order_response_with_initial_rate(
+        time, GRID_COND[0], V0 * math.sin(GRID_COND[1]),
+        row["omega_n"], row["zeta"],
+    )
+    from matplotlib import patheffects
+    actual_line, = ax.plot(time, arr[:, 5], color=color, ls="-", lw=1.4)
+    reference_line, = ax.plot(
+        time, reference, color="0.15", ls=(0, (4, 3)), lw=0.9, zorder=3,
+        path_effects=[patheffects.Stroke(linewidth=1.8, foreground="white"),
+                      patheffects.Normal()],
+    )
+    if row["pp_equivalent"]:
+        ax.text(0.98, 0.95, rf"$\omega_n={row['omega_n']:.3f}$ (=PP)",
+                transform=ax.transAxes, ha="right", va="top", fontsize=7,
+                color="0.25")
+    return actual_line, reference_line
 
 
 def _fig_test1_grid(fig_dir, blocks, traces):
@@ -1228,14 +1263,7 @@ def _fig_test1_grid(fig_dir, blocks, traces):
             for omega_n, color in zip(GRID_OMEGAS, colors):
                 row = rows_by_cell[(round(omega_n, 6), round(zeta, 6))]
                 arr = traces[row["key"]]
-                label = f"$\\omega_n={omega_n:.3f}$"
-                if row["pp_equivalent"]:
-                    label += " (=PP)"
-                elif not row["in_bound"]:
-                    label += r"$^{\dagger}$"
-                linestyle = "--" if row["pp_equivalent"] else "-"
-                ax.plot(arr[:, 0], arr[:, 5], color=color, ls=linestyle,
-                        lw=1.1, label=label)
+                _plot_test1_response(ax, row, arr, color)
             ax.axhline(0.0, color="0.65", lw=0.6)
             ax.grid(True, color="0.9", lw=0.5)
             ax.tick_params(labelsize=7)
@@ -1247,16 +1275,20 @@ def _fig_test1_grid(fig_dir, blocks, traces):
             if j == 0:
                 ax.set_ylabel(r"$e_y$ [m]")
     from matplotlib.lines import Line2D
-    handles = [
-        Line2D([], [], color=color, lw=1.1,
+    frequency_handles = [
+        Line2D([], [], color=color, lw=1.4,
                label=rf"$\omega_n={omega_n:.3f}$ rad/s")
         for omega_n, color in zip(GRID_OMEGAS, colors)
     ]
-    handles.append(Line2D([], [], color="0.3", lw=1.1, ls="--",
-                          label="PP-equivalent cell (dashed)"))
-    fig.legend(handles=handles, loc="upper center", ncol=len(handles),
-               fontsize=7, frameon=False, bbox_to_anchor=(0.5, 1.0))
-    fig.tight_layout(pad=0.4, rect=(0.0, 0.0, 1.0, 0.95))
+    style_handles = [
+        Line2D([], [], color="0.3", lw=1.4, ls="-", label="Simulation"),
+        Line2D([], [], color="0.15", lw=0.9, ls=(0, (4, 3)), label="Nominal model"),
+    ]
+    legend_handles = frequency_handles + style_handles
+    fig.legend(handles=legend_handles, loc="upper center", ncol=5,
+               fontsize=7, frameon=False, columnspacing=1.2,
+               bbox_to_anchor=(0.5, 1.0))
+    fig.tight_layout(pad=0.4, rect=(0.0, 0.0, 1.0, 0.94))
     for ext in ("pdf", "png"):
         fig.savefig(fig_dir / f"sim_test1_grid_response.{ext}", dpi=300,
                     bbox_inches="tight")
@@ -1265,9 +1297,9 @@ def _fig_test1_grid(fig_dir, blocks, traces):
     # The manuscript assembles the grid from one file per cell with LaTeX
     # sub-captions "(a) L_d = ..., zeta = ..." (no parameter text inside the
     # panels) and a legend strip above the panels.
-    legend_fig = plt.figure(figsize=(6.0, 0.32))
-    legend_fig.legend(handles=handles, loc="center", ncol=len(handles),
-                      fontsize=7, frameon=False)
+    legend_fig = plt.figure(figsize=(7.1, 0.22))
+    legend_fig.legend(handles=legend_handles, loc="center", ncol=5,
+                      fontsize=7, frameon=False, columnspacing=1.2)
     for ext in ("pdf", "png"):
         legend_fig.savefig(fig_dir / f"sim_test1_grid_legend.{ext}", dpi=300,
                            bbox_inches="tight", pad_inches=0.02)
@@ -1282,8 +1314,7 @@ def _fig_test1_grid(fig_dir, blocks, traces):
             for omega_n, color in zip(GRID_OMEGAS, colors):
                 row = rows_by_cell[(round(omega_n, 6), round(zeta, 6))]
                 arr = traces[row["key"]]
-                pax.plot(arr[:, 0], arr[:, 5], color=color,
-                         ls="--" if row["pp_equivalent"] else "-", lw=1.1)
+                _plot_test1_response(pax, row, arr, color)
             pax.axhline(0.0, color="0.65", lw=0.6)
             pax.grid(True, color="0.9", lw=0.5)
             pax.tick_params(labelsize=7)
@@ -1329,13 +1360,29 @@ def run_test1(table_dir, fig_dir, trace_dir=None):
             "initial_condition": [GRID_COND[0], math.degrees(GRID_COND[1])],
             "initial_condition_rule": (
                 "fixed absolute (e_y, e_theta); e_y=0.15 m keeps the gate "
-                "fully on for both lookaheads ((0.15/0.5)^2 = 0.09 < "
+                "nearly fully on for both lookaheads ((0.15/0.5)^2 = 0.09 < "
                 "eps_on = 0.10)"
             ),
             "omega_axis": {
                 name: omega
                 for name, omega in zip(GRID_OMEGA_NAMES, GRID_OMEGAS)
             },
+            "reference_model": {
+                "equation": "e_y'' + 2*zeta*omega_n*e_y' + omega_n**2*e_y = 0",
+                "parameters": "the configured nominal omega_n and zeta of each cell",
+                "initial_error_m": GRID_COND[0],
+                "initial_error_rate_mps": V0 * math.sin(GRID_COND[1]),
+                "time_samples": "same evaluation times as each simulation trace",
+                "fitted_to_observations": False,
+                "line_styles": {
+                    "simulation": "frequency-colored solid",
+                    "nominal": "black dashed with white outline",
+                },
+            },
+            "reference_design_value": (
+                "legacy keys omega_n_max, lambda_max, and in_bound refer to "
+                "the approximate reference design value, not a guaranteed limit"
+            ),
             "zetas": list(GRID_ZETAS),
             "lookaheads_m": list(GRID_LDS),
             "cell_count": (
@@ -1355,7 +1402,7 @@ def run_test1(table_dir, fig_dir, trace_dir=None):
 # ---------------------------------------------------------------------------
 TEST2_METHODS = ["PP", "DPP", "ECPP w/o gate", "ECPP"]
 # Operating point shared with the hardware experiments and test 3: the
-# rate-bound design limit at L_d = 1.0 m with critical damping.
+# reference design value at L_d = 1.0 m with nominal critical damping.
 TEST2_LD = SPEED_LD
 TEST2_OMEGA_N = SPEED_OMEGA_N_MAX
 TEST2_ZETA = 1.0
@@ -1364,8 +1411,8 @@ TEST2_ZETA = 1.0
 # pure-heading response, where the e_y-driven gate starts fully open and the
 # initial-error-normalized transient metrics (T_r, T_s, M_os) are undefined.
 # 0.30 m keeps the gate open (sigma = 0.99, the hardware local amplitude),
-# 2.0 m starts with the gate closed (|e_y|/L_d = 2), and 3.0 m lies beyond
-# the distance at which the ungated linear laws stay saturated and circle.
+# 2.0 m starts with negligible compensation (|e_y|/L_d = 2), and 3.0 m
+# probes approach from a larger tracking error.
 TEST2_EY0S = (0.0, 0.30, 2.0, 3.0)
 TEST2_ETH0_DEGS = (0.0, -90.0)
 TEST2_CONDS = [
@@ -1390,7 +1437,7 @@ def write_test2_table(path_out, results):
         r"\begin{tabular}{@{}lrrrrrrr@{}}",
         r"\toprule",
         r"Method & $\bar e_y$ [m] & $\bar e_\theta$ [$^\circ$] & "
-        r"$T_r$ [s] & $T_s^{2\%}$ [s] & $M_{\rm os}$ [m] & "
+        r"$T_r$ [s] & $T_s^{2\%}$ [s] & $M_\mathrm{os}$ [m] & "
         r"$\kappa_{\max}$ [1/m] & Sat. [\%] \\",
         r"\midrule",
     ]
@@ -1449,6 +1496,12 @@ def make_by_condition_panels(fig_dir, path, omega_n, zeta, ey0, eth0):
     x_hi = max(ref[:, 0].max(), starts[:, 0].max()) + margin
     y_lo = min(ref[:, 1].min(), starts[:, 1].min()) - margin
     y_hi = max(ref[:, 1].max(), starts[:, 1].max()) + margin
+    local_straight = path.key == "straight" and abs(ey0) < 1.5 and abs(eth0) < 1e-9
+    trajectory_aspect = "auto" if local_straight else "equal"
+    if local_straight:
+        y_values = np.concatenate([ref[:, 1], *(arr[:, 2] for arr in runs.values())])
+        y_margin = 0.05 * max(float(np.ptp(y_values)), 0.01)
+        y_lo, y_hi = float(y_values.min()) - y_margin, float(y_values.max()) + y_margin
 
     # One small panel per quantity, sized for a 0.24-textwidth minipage so
     # that the manuscript can put a LaTeX sub-caption under each and a shared
@@ -1469,7 +1522,7 @@ def make_by_condition_panels(fig_dir, path, omega_n, zeta, ey0, eth0):
         plt.close(fig)
 
     _write_condition_row(fig_dir, stem, runs, ref, (x_lo, x_hi), (y_lo, y_hi),
-                         t_plot)
+                         t_plot, trajectory_aspect=trajectory_aspect)
     _write_test2_legend(fig_dir)
 
     # trajectory; far starts get an inset of the approach to the path
@@ -1481,7 +1534,7 @@ def make_by_condition_panels(fig_dir, path, omega_n, zeta, ey0, eth0):
     ax.set_xlabel(r"$x$ [m]"); ax.set_ylabel(r"$y$ [m]")
     ax.set_xlim(x_lo, x_hi)
     ax.set_ylim(y_lo, y_hi)
-    ax.set_aspect("equal", adjustable="datalim")
+    ax.set_aspect(trajectory_aspect, adjustable="datalim")
     if abs(ey0) >= 1.5:
         _add_near_path_inset(ax, runs, ref)
     finish(fig, ax, "trajectory")
@@ -1535,7 +1588,7 @@ def make_by_condition_panels(fig_dir, path, omega_n, zeta, ey0, eth0):
         ax.plot(arr[:, 0], arr[:, 9], color=METHOD_COLORS[method], lw=0.9)
     ax.axhline(OMEGA_MAX, color="0.5", lw=0.7, ls=":")
     ax.axhline(-OMEGA_MAX, color="0.5", lw=0.7, ls=":")
-    ax.set_xlabel(r"$t$ [s]"); ax.set_ylabel(r"$\omega_{\rm raw}$ [rad/s]")
+    ax.set_xlabel(r"$t$ [s]"); ax.set_ylabel(r"$\omega_\mathrm{raw}$ [rad/s]")
     ax.set_xlim(0.0, t_plot)
     finish(fig, ax, "omega")
 
@@ -1555,12 +1608,12 @@ def _write_test2_legend(fig_dir):
     plt.close(fig)
 
 
-def _add_near_path_inset(ax, runs, ref, near_m=0.5, along_m=2.0):
+def _add_near_path_inset(ax, runs, ref, near_m=0.1, along_m=1.0):
     """Inset magnifying where PP and ECPP reach the path from a far start.
 
     The window covers the PP/ECPP trajectories from the first sample with
     |e_y| < ``near_m`` until ``along_m`` further along the reference path
-    (the gate opens and the compensated response differs from PP there);
+    (the near-path approach and overshoot differ between PP and ECPP there);
     the inset sits in the emptiest corner of the panel."""
     segs = []
     for method in ("PP", "ECPP"):
@@ -1577,14 +1630,14 @@ def _add_near_path_inset(ax, runs, ref, near_m=0.5, along_m=2.0):
     if not segs:
         return
     pts = np.vstack(segs)
-    margin = 0.15
+    margin = 0.03
     wx0, wx1 = pts[:, 0].min() - margin, pts[:, 0].max() + margin
     wy0, wy1 = pts[:, 1].min() - margin, pts[:, 1].max() + margin
-    # make the window at least 0.8 m in each direction, centred
-    if wx1 - wx0 < 0.8:
-        c = 0.5 * (wx0 + wx1); wx0, wx1 = c - 0.4, c + 0.4
-    if wy1 - wy0 < 0.8:
-        c = 0.5 * (wy0 + wy1); wy0, wy1 = c - 0.4, c + 0.4
+    # Keep a little context without expanding away the tracking differences.
+    if wx1 - wx0 < 0.2:
+        c = 0.5 * (wx0 + wx1); wx0, wx1 = c - 0.1, c + 0.1
+    if wy1 - wy0 < 0.2:
+        c = 0.5 * (wy0 + wy1); wy0, wy1 = c - 0.1, c + 0.1
     # emptiest candidate box: count plotted samples inside each box (the
     # reference path counts ten times, it must stay visible) and reject boxes
     # that overlap the zoom window
@@ -1593,9 +1646,9 @@ def _add_near_path_inset(ax, runs, ref, near_m=0.5, along_m=2.0):
     x_lo, x_hi = ax.get_xlim(); y_lo, y_hi = ax.get_ylim()
     traces = np.vstack([runs[m][:, 1:3] for m in TEST2_METHODS])
     candidates = [
-        (0.50, 0.46, 0.48, 0.50), (0.02, 0.46, 0.48, 0.50),
-        (0.50, 0.02, 0.48, 0.50), (0.02, 0.02, 0.48, 0.50),
-        (0.02, 0.20, 0.36, 0.60), (0.62, 0.20, 0.36, 0.60),
+        (0.50, 0.46, 0.48, 0.50), (0.08, 0.46, 0.48, 0.50),
+        (0.50, 0.02, 0.48, 0.50), (0.08, 0.02, 0.48, 0.50),
+        (0.08, 0.20, 0.36, 0.60), (0.62, 0.20, 0.36, 0.60),
     ]
     def cost(box):
         fx0, fy0, fw, fh = box
@@ -1613,13 +1666,15 @@ def _add_near_path_inset(ax, runs, ref, near_m=0.5, along_m=2.0):
         arr = runs[method]
         axins.plot(arr[:, 1], arr[:, 2], color=METHOD_COLORS[method], lw=0.9)
     axins.set_xlim(wx0, wx1); axins.set_ylim(wy0, wy1)
-    axins.set_aspect("equal", adjustable="datalim")
+    # Use the selected coordinate ranges; equal aspect would widen them again.
+    axins.set_aspect("auto")
     axins.tick_params(labelsize=4.5, length=1.5, pad=1)
     axins.grid(True, color="0.9", lw=0.4, ls=":")
     ax.indicate_inset_zoom(axins, edgecolor="0.4", lw=0.6)
 
 
-def _write_condition_row(fig_dir, stem, runs, ref, xlim, ylim, t_plot):
+def _write_condition_row(fig_dir, stem, runs, ref, xlim, ylim, t_plot,
+                         trajectory_aspect="equal"):
     """One 1x4 row (trajectory, gate, lateral error, curvature command) with a
     single method legend above the panels; this is the figure the manuscript
     embeds for each test-2 condition."""
@@ -1639,7 +1694,7 @@ def _write_condition_row(fig_dir, stem, runs, ref, xlim, ylim, t_plot):
     ax_xy.set_ylim(y_lo, y_hi)
     # keep the panel box the same height in every condition (a tall bounding
     # box, e.g. the far start beside the arc, widens the data limits instead)
-    ax_xy.set_aspect("equal", adjustable="datalim")
+    ax_xy.set_aspect(trajectory_aspect, adjustable="datalim")
     ax_xy.set_xlabel(r"$x$ [m]"); ax_xy.set_ylabel(r"$y$ [m]")
     ax_xy.set_title("(a) Trajectory", fontsize=8, loc="left")
     ax_sig.set_ylim(-0.05, 1.05)
@@ -1908,7 +1963,7 @@ def main(
     for ld in GRID_LDS:
         block = test1["blocks"][_ld_tag(ld)]
         print(f"Ld={ld:.1f}: omega_pp={block['omega_n_pp']:.6f}, "
-              f"omega_n_max={block['omega_n_max']:.6f}, "
+              f"omega_n_ref={block['omega_n_max']:.6f}, "
               f"negative_control_dev="
               f"{block['pp_negative_control_max_dev']:.2e}")
 

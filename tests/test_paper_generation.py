@@ -128,6 +128,42 @@ def test_analytic_overlay_uses_the_paper_natural_frequency():
     assert response == pytest.approx(expected)
 
 
+@pytest.mark.parametrize("omega_n", ieee_access.GRID_OMEGAS)
+@pytest.mark.parametrize("zeta", ieee_access.GRID_ZETAS)
+def test_nominal_overlay_is_unfitted_and_uses_the_same_evaluation_times(omega_n, zeta):
+    import matplotlib.pyplot as plt
+
+    time = np.linspace(0.0, 12.0, 361)
+    trace = np.zeros((len(time), 11))
+    trace[:, 0] = time
+    # Deliberately unrelated observations must not change the reference.
+    trace[:, 5] = 0.4 + 0.1 * np.sin(time)
+    row = {"omega_n": omega_n, "zeta": zeta, "pp_equivalent": False}
+    fig, ax = plt.subplots()
+    try:
+        actual, nominal = ieee_access._plot_test1_response(ax, row, trace, "blue")
+        np.testing.assert_array_equal(actual.get_ydata(), trace[:, 5])
+        np.testing.assert_array_equal(nominal.get_xdata(), time)
+        assert nominal.get_ydata()[0] == pytest.approx(0.15)
+        assert actual.get_linestyle() == "-" and nominal.get_linestyle() == "--"
+        assert actual.get_color() == nominal.get_color()
+        # Independent numerical integration of the nominal ODE (RK4).
+        state = np.array([0.15, 0.0])
+        expected = [state[0]]
+        def rhs(y):
+            return np.array([y[1], -2 * zeta * omega_n * y[1] - omega_n**2 * y[0]])
+        for dt in np.diff(time):
+            k1 = rhs(state)
+            k2 = rhs(state + dt * k1 / 2)
+            k3 = rhs(state + dt * k2 / 2)
+            k4 = rhs(state + dt * k3)
+            state = state + dt * (k1 + 2*k2 + 2*k3 + k4) / 6
+            expected.append(state[0])
+        np.testing.assert_allclose(nominal.get_ydata(), expected, atol=1e-7, rtol=0)
+    finally:
+        plt.close(fig)
+
+
 def test_preview_is_the_default_output_location(tmp_path):
     figure1.configure_output_root(tmp_path)
     assert figure1.FIG_OUT == tmp_path / "generated_preview" / "figures"
@@ -406,18 +442,13 @@ def test_test3_cli_preview_and_apply(tmp_path):
     assert (applied / "traces" / "sim_test3_PP_ld0p50.csv").is_file()
     table = (applied / "tables" / "sim_test3_results.tex").read_text()
     assert "\\bottomrule" in table and table.count("\nPP &") == 2 and table.count("\nECPP &") == 2
-    assert "$T_s^{2\\%}$" in table and "$N_{zc}$" in table
+    assert "$T_s^{2\\%}$" in table and "$N_{\\mathrm{zc}}$" in table
     with pytest.raises(SystemExit):
         test3_preview.main(["--out-root", str(tmp_path), "--apply", "--tag", "x"])
 
 
 def test_ungated_linear_laws_stay_saturated_far_from_the_path():
-    """Beyond the reachability limit, DPP and ungated ECPP circle forever.
-
-    At the test-2 design point the ungated lateral term keeps
-    max_theta omega_raw below -omega_max once e_y exceeds about 1.7 m (DPP)
-    and 2.4 m (ECPP w/o gate); the gated ECPP falls back to PP and converges.
-    """
+    """Reproduce observed circling and ECPP settling in this finite simulation."""
     ieee_access.configure(ld=ieee_access.TEST2_LD)
     path = ieee_access.StraightPath()
     results = {}
